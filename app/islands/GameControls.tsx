@@ -1,28 +1,54 @@
 interface GameControlsProps {
   onNumberInput: (number: number) => void
   onClearCell: () => void
+  onToggleMemoryMode: () => void
+  onClearAllMemos: () => void
   selectedCell: [number, number] | null
   isComplete?: boolean
+  isMemoryMode?: boolean
 }
 
 export default function GameControls({
   onNumberInput,
   onClearCell,
+  onToggleMemoryMode,
+  onClearAllMemos,
   selectedCell,
-  isComplete = false
+  isComplete = false,
+  isMemoryMode = false
 }: GameControlsProps) {
   const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
   return (
     <div className="space-y-4">
+      {/* メモモード切り替え */}
+      <div>
+        <button
+          className={`w-full py-2 font-medium rounded-lg transition-colors mb-3 ${
+            isMemoryMode 
+              ? 'bg-purple-500 hover:bg-purple-600 text-white' 
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+          }`}
+          onClick={onToggleMemoryMode}
+          disabled={isComplete}
+        >
+          📝 {isMemoryMode ? 'メモモード ON' : 'メモモード OFF'}
+        </button>
+      </div> 
       {/* 数字入力ボタン */}
       <div>
-        <h3 className="text-lg font-semibold mb-3 text-gray-800">数字入力</h3>
+        <h3 className="text-lg font-semibold mb-3 text-gray-800">
+          {isMemoryMode ? 'メモ入力' : '数字入力'}
+        </h3>
         <div className="grid grid-cols-3 gap-2">
           {numbers.map((number) => (
             <button
               key={number}
-              className="w-12 h-12 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-bold rounded-lg transition-colors"
+              className={`w-12 h-12 font-bold rounded-lg transition-colors ${
+                isMemoryMode 
+                  ? 'bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 text-white'
+                  : 'bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white'
+              }`}
               onClick={() => onNumberInput(number)}
               disabled={!selectedCell || isComplete}
             >
@@ -33,14 +59,24 @@ export default function GameControls({
       </div>
 
       {/* クリアボタン */}
-      <div>
+      <div className="space-y-2">
         <button
           className="w-full py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors"
           onClick={onClearCell}
           disabled={!selectedCell || isComplete}
         >
-          クリア
+          {isMemoryMode ? 'メモクリア' : 'セルクリア'}
         </button>
+        
+        {isMemoryMode && (
+          <button
+            className="w-full py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors"
+            onClick={onClearAllMemos}
+            disabled={isComplete}
+          >
+            全メモクリア
+          </button>
+        )}
       </div>
 
       {/* 将来実装予定の機能ボタン */}

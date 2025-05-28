@@ -14,12 +14,13 @@ export interface SudokuPuzzle {
 export interface SudokuState {
   puzzle: SudokuPuzzle
   currentGrid: number[][] // 現在の状態
+  memoGrid: MemoGrid // メモ数字の状態
   startedAt: string // ゲーム開始時刻
   lastModified: string // 最終更新時刻
   completedAt?: string // 完了時刻
   timeSpent: number // 経過時間（秒）
-  hints: number[][] // メモ用の配列（将来実装）
   hintsUsed: number // 使用したヒント数
+  isMemoryMode: boolean // メモモードかどうか
 }
 
 // 保存用のデータ構造（LocalStorage用）
@@ -29,16 +30,22 @@ export interface SavedGame {
   savedAt: string
 }
 
+// メモデータの型定義
+export type MemoGrid = Set<number>[][] // 各セル[row][col]にSet<number>でメモ数字を管理
+
 // 初期状態を作成する関数
 export function createInitialState(puzzle: SudokuPuzzle): SudokuState {
   return {
     puzzle,
     currentGrid: puzzle.initialGrid.map(row => [...row]), // ディープコピー
+    memoGrid: Array(9).fill(null).map(() => 
+      Array(9).fill(null).map(() => new Set<number>())
+    ),
     startedAt: new Date().toISOString(),
     lastModified: new Date().toISOString(),
     timeSpent: 0,
-    hints: Array(9).fill(null).map(() => Array(9).fill(0)), // 9x9の0配列
-    hintsUsed: 0
+    hintsUsed: 0,
+    isMemoryMode: false
   }
 }
 
@@ -187,4 +194,58 @@ export function getDifficultyLabel(difficulty: SudokuPuzzle['difficulty']): stri
     default:
       return '不明'
   }
+}
+
+// メモを追加/削除する関数
+export function toggleMemo(memoGrid: MemoGrid, row: number, col: number, number: number): MemoGrid {
+  const newMemoGrid = memoGrid.map(r => r.map(cell => new Set(cell)))
+  
+  if (newMemoGrid[row][col].has(number)) {
+    newMemoGrid[row][col].delete(number)
+  } else {
+    newMemoGrid[row][col].add(number)
+  }
+  
+  return newMemoGrid
+}
+
+// セルのメモをすべてクリアする関数
+export function clearCellMemo(memoGrid: MemoGrid, row: number, col: number): MemoGrid {
+  const newMemoGrid = memoGrid.map(r => r.map(cell => new Set(cell)))
+  newMemoGrid[row][col].clear()
+  return newMemoGrid
+}
+
+// 数字確定時に関連するメモを自動削除する関数
+export function autoRemoveMemos(memoGrid: MemoGrid, row: number, col: number, number: number): MemoGrid {
+  const newMemoGrid = memoGrid.map(r => r.map(cell => new Set(cell)))
+  
+  // 同じ行のメモから削除
+  for (let c = 0; c < 9; c++) {
+    newMemoGrid[row][c].delete(number)
+  }
+  
+  // 同じ列のメモから削除
+  for (let r = 0; r < 9; r++) {
+    newMemoGrid[r][col].delete(number)
+  }
+  
+  // 同じ3x3ブロックのメモから削除
+  const blockRow = Math.floor(row / 3) * 3
+  const blockCol = Math.floor(col / 3) * 3
+  
+  for (let r = blockRow; r < blockRow + 3; r++) {
+    for (let c = blockCol; c < blockCol + 3; c++) {
+      newMemoGrid[r][c].delete(number)
+    }
+  }
+  
+  return newMemoGrid
+}
+
+// 全メモをクリアする関数
+export function clearAllMemos(memoGrid: MemoGrid): MemoGrid {
+  return Array(9).fill(null).map(() => 
+    Array(9).fill(null).map(() => new Set<number>())
+  )
 }

@@ -8,7 +8,12 @@ import {
   createInitialState, 
   isGameComplete,
   isValidMove,
-  calculateTimeSpent
+  calculateTimeSpent,
+  toggleMemo,
+  clearCellMemo,
+  autoRemoveMemos,
+  clearAllMemos,
+  MemoGrid
 } from '../utils/sudoku'
 
 // サンプル問題データ
@@ -80,25 +85,47 @@ export default function SudokuGame() {
     // 初期値のセルは変更できない
     if (gameState.puzzle.initialGrid[row][col] !== 0) return
 
-    const newGrid = gameState.currentGrid.map((r, rowIndex) =>
-      r.map((cell, colIndex) =>
-        rowIndex === row && colIndex === col ? number : cell
+    if (gameState.isMemoryMode) {
+      // メモモードの場合
+      const newMemoGrid = toggleMemo(gameState.memoGrid, row, col, number)
+      
+      setGameState({
+        ...gameState,
+        memoGrid: newMemoGrid,
+        lastModified: new Date().toISOString(),
+        timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
+      })
+    } else {
+      // 通常入力モードの場合
+      const newGrid = gameState.currentGrid.map((r, rowIndex) =>
+        r.map((cell, colIndex) =>
+          rowIndex === row && colIndex === col ? number : cell
+        )
       )
-    )
 
-    // バリデーションチェック
-    const newErrors = new Set<string>()
-    if (number !== 0 && !isValidMove(newGrid, row, col, number)) {
-      newErrors.add(`${row}-${col}`)
+      // バリデーションチェック
+      const newErrors = new Set<string>()
+      if (number !== 0 && !isValidMove(newGrid, row, col, number)) {
+        newErrors.add(`${row}-${col}`)
+      }
+      setErrors(newErrors)
+
+      // 数字を確定入力した場合、関連するメモを自動削除
+      let newMemoGrid = gameState.memoGrid
+      if (number !== 0) {
+        newMemoGrid = autoRemoveMemos(gameState.memoGrid, row, col, number)
+        // 入力したセルのメモもクリア
+        newMemoGrid = clearCellMemo(newMemoGrid, row, col)
+      }
+
+      setGameState({
+        ...gameState,
+        currentGrid: newGrid,
+        memoGrid: newMemoGrid,
+        lastModified: new Date().toISOString(),
+        timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
+      })
     }
-    setErrors(newErrors)
-
-    setGameState({
-      ...gameState,
-      currentGrid: newGrid,
-      lastModified: new Date().toISOString(),
-      timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
-    })
   }
 
   const handleClearCell = () => {
@@ -109,7 +136,43 @@ export default function SudokuGame() {
     // 初期値のセルは変更できない
     if (gameState.puzzle.initialGrid[row][col] !== 0) return
 
-    handleNumberInput(0)
+    if (gameState.isMemoryMode) {
+      // メモモードの場合：選択したセルのメモをすべてクリア
+      const newMemoGrid = clearCellMemo(gameState.memoGrid, row, col)
+      
+      setGameState({
+        ...gameState,
+        memoGrid: newMemoGrid,
+        lastModified: new Date().toISOString(),
+        timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
+      })
+    } else {
+      // 通常モードの場合：数字をクリア
+      handleNumberInput(0)
+    }
+  }
+
+    const handleToggleMemoryMode = () => {
+    if (!gameState || isComplete) return
+
+    setGameState({
+      ...gameState,
+      isMemoryMode: !gameState.isMemoryMode,
+      lastModified: new Date().toISOString()
+    })
+  }
+
+  const handleClearAllMemos = () => {
+    if (!gameState || isComplete) return
+
+    const newMemoGrid = clearAllMemos(gameState.memoGrid)
+    
+    setGameState({
+      ...gameState,
+      memoGrid: newMemoGrid,
+      lastModified: new Date().toISOString(),
+      timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
+    })
   }
 
   if (!gameState) {
@@ -124,15 +187,29 @@ export default function SudokuGame() {
           isComplete={isComplete}
         />
 
+        {/* メモモード表示 */}
+        {gameState.isMemoryMode && (
+          <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-center gap-2">
+              <span className="text-purple-600 font-medium">📝 メモモード</span>
+              <span className="text-sm text-purple-500">
+                数字をクリックしてメモを追加/削除できます
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1">
             <SudokuBoard
               currentGrid={gameState.currentGrid}
               initialGrid={gameState.puzzle.initialGrid}
+              memoGrid={gameState.memoGrid}
               selectedCell={selectedCell}
               onCellSelect={handleCellSelect}
               errors={errors}
               isComplete={isComplete}
+              isMemoryMode={gameState.isMemoryMode}
             />
           </div>
 
@@ -140,8 +217,11 @@ export default function SudokuGame() {
             <GameControls
               onNumberInput={handleNumberInput}
               onClearCell={handleClearCell}
+              onToggleMemoryMode={handleToggleMemoryMode}
+              onClearAllMemos={handleClearAllMemos}
               selectedCell={selectedCell}
               isComplete={isComplete}
+              isMemoryMode={gameState.isMemoryMode}
             />
           </div>
         </div>
