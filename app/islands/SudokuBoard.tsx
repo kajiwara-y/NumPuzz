@@ -120,24 +120,24 @@ export default function SudokuBoard({
       colorClasses = 'bg-red-100 text-red-700 border-red-300'
     } else if (relation === 'selected') {
       // 選択されたセル
-      colorClasses = isMemoryMode ? 'bg-purple-300 text-purple-900' : 'bg-blue-300 text-blue-900'
+      colorClasses = isMemoryMode ? 'bg-purple-300 text-purple-900 shadow-inner' : 'bg-blue-300 text-blue-900 shadow-inner'
     } else if (relation === 'same-row' || relation === 'same-col') {
       // 同じ行・列
       if (isInitial) {
-        colorClasses = 'bg-blue-50 text-gray-900 font-bold'
+        colorClasses = 'bg-blue-100 text-gray-900 font-bold'
       } else if (isComplete) {
         colorClasses = 'bg-green-100 text-green-800'
       } else {
-        colorClasses = 'bg-blue-50 text-gray-700'
+        colorClasses = 'bg-blue-100 text-gray-700'
       }
     } else if (relation === 'same-block') {
       // 同じ3x3ブロック
       if (isInitial) {
-        colorClasses = 'bg-blue-25 text-gray-900 font-bold'
+        colorClasses = 'bg-blue-50 text-gray-900 font-bold'
       } else if (isComplete) {
-        colorClasses = 'bg-green-75 text-green-800'
+        colorClasses = 'bg-green-50 text-green-800'
       } else {
-        colorClasses = 'bg-blue-25 text-gray-700'
+        colorClasses = 'bg-blue-50 text-gray-700'
       }
     } else if (isInitial) {
       // 初期値（関連なし）
