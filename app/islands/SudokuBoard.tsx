@@ -61,16 +61,51 @@ export default function SudokuBoard({
     )
   }
 
+  // セルの関連性を判定する関数
+  const getCellRelation = (row: number, col: number) => {
+    if (!selectedCell) return 'none'
+    
+    const [selectedRow, selectedCol] = selectedCell
+    
+    // 選択されたセル自体
+    if (row === selectedRow && col === selectedCol) {
+      return 'selected'
+    }
+    
+    // 同じ行
+    if (row === selectedRow) {
+      return 'same-row'
+    }
+    
+    // 同じ列
+    if (col === selectedCol) {
+      return 'same-col'
+    }
+    
+    // 同じ3x3ブロック
+    const selectedBlockRow = Math.floor(selectedRow / 3)
+    const selectedBlockCol = Math.floor(selectedCol / 3)
+    const currentBlockRow = Math.floor(row / 3)
+    const currentBlockCol = Math.floor(col / 3)
+    
+    if (selectedBlockRow === currentBlockRow && selectedBlockCol === currentBlockCol) {
+      return 'same-block'
+    }
+    
+    return 'none'
+  }
+
   const getCellClassName = (row: number, col: number) => {
     const baseClasses = "relative w-8 h-8 sm:w-10 sm:h-10 border border-gray-400 flex items-center justify-center text-sm sm:text-base font-medium cursor-pointer transition-colors"    
     // 初期値のセルかどうか
     const isInitial = initialGrid[row][col] !== 0
     
-    // 選択されたセルかどうか
-    const isSelected = selectedCell && selectedCell[0] === row && selectedCell[1] === col
-    
     // エラーがあるセルかどうか
     const hasError = errors.has(`${row}-${col}`)
+
+    // セルの関連情報
+    const relation = getCellRelation(row, col)
+
     
     // 3x3ブロックの境界線
     const thickBorderClasses = []
@@ -81,14 +116,37 @@ export default function SudokuBoard({
     
     let colorClasses = ''
     if (hasError) {
+      // エラーは最優先
       colorClasses = 'bg-red-100 text-red-700 border-red-300'
-    } else if (isSelected) {
-      colorClasses = isMemoryMode ? 'bg-purple-200 text-purple-900' : 'bg-blue-200 text-blue-900'
+    } else if (relation === 'selected') {
+      // 選択されたセル
+      colorClasses = isMemoryMode ? 'bg-purple-300 text-purple-900' : 'bg-blue-300 text-blue-900'
+    } else if (relation === 'same-row' || relation === 'same-col') {
+      // 同じ行・列
+      if (isInitial) {
+        colorClasses = 'bg-blue-50 text-gray-900 font-bold'
+      } else if (isComplete) {
+        colorClasses = 'bg-green-100 text-green-800'
+      } else {
+        colorClasses = 'bg-blue-50 text-gray-700'
+      }
+    } else if (relation === 'same-block') {
+      // 同じ3x3ブロック
+      if (isInitial) {
+        colorClasses = 'bg-blue-25 text-gray-900 font-bold'
+      } else if (isComplete) {
+        colorClasses = 'bg-green-75 text-green-800'
+      } else {
+        colorClasses = 'bg-blue-25 text-gray-700'
+      }
     } else if (isInitial) {
+      // 初期値（関連なし）
       colorClasses = 'bg-gray-100 text-gray-900 font-bold'
     } else if (isComplete) {
+      // 完了時（関連なし）
       colorClasses = 'bg-green-50 text-green-800'
     } else {
+      // 通常状態
       colorClasses = 'bg-white text-gray-700 hover:bg-gray-50'
     }
     
