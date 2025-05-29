@@ -4,7 +4,7 @@ export interface SudokuPuzzle {
   title: string
   difficulty: 'easy' | 'medium' | 'hard' | 'expert'
   initialGrid: number[][] // 9x9の初期状態（0は空のセル）
-  solution: number[][] // 9x9の解答
+  solution: number[][] | null // 9x9の解答
   createdAt: string // ISO文字列
   source?: 'upload' | 'manual' // 将来的な拡張用
   imageUrl?: string // アップロードされた画像のURL（将来的な拡張用）
@@ -332,4 +332,166 @@ export function calculateProgress(currentGrid: number[][], initialGrid: number[]
   }
   
   return totalEmptyCells === 0 ? 100 : Math.round((filledCells / totalEmptyCells) * 100)
+}
+
+// 写真解析結果の型定義
+export interface PhotoAnalysisResult {
+  success: boolean
+  grid?: number[][]
+  confidence?: number
+  error?: string
+  originalImage?: string // Base64エンコードされた画像
+}
+
+// 写真から作成された問題用の関数
+export function createPuzzleFromPhoto(
+  grid: number[][], 
+  title?: string,
+  originalImage?: string
+): SudokuPuzzle {
+  // 解答を生成
+  const solution = solveSudoku(grid)
+  
+  if (!solution) {
+    throw new Error('この問題は解くことができません')
+  }
+  return {
+    id: `photo-${Date.now()}`,
+    title: title || `写真から作成 - ${new Date().toLocaleString()}`,
+    difficulty: estimateDifficulty(grid),
+    initialGrid: grid.map(row => [...row]),
+    solution: solution, 
+    createdAt: new Date().toISOString(),
+    source: 'upload',
+    imageUrl: originalImage
+  }
+}
+
+// 難易度を推定する関数
+function estimateDifficulty(grid: number[][]): SudokuPuzzle['difficulty'] {
+  let filledCells = 0
+  
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (grid[row][col] !== 0) {
+        filledCells++
+      }
+    }
+  }
+  
+  // 埋まっているセル数で難易度を推定
+  if (filledCells >= 50) return 'easy'
+  if (filledCells >= 40) return 'medium'
+  if (filledCells >= 30) return 'hard'
+  return 'expert'
+}
+
+// 問題が有効な数独かチェックする関数
+export function isValidSudokuPuzzle(grid: number[][]): boolean {
+  // 基本的なルールチェック
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const num = grid[row][col]
+      if (num !== 0) {
+        // 一時的に0にして、その数字が有効かチェック
+        const tempGrid = grid.map(r => [...r])
+        tempGrid[row][col] = 0
+        if (!isValidMove(tempGrid, row, col, num)) {
+          return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+
+// 数独ソルバー（バックトラッキング法）
+export function solveSudoku(grid: number[][]): number[][] | null {
+  // グリッドをコピー
+  const solution = grid.map(row => [...row])
+  
+  if (solveSudokuRecursive(solution)) {
+    return solution
+  }
+  
+  return null // 解けない場合
+}
+
+// 再帰的に数独を解く
+function solveSudokuRecursive(grid: number[][]): boolean {
+  // 空のセルを見つける
+  const emptyCell = findEmptyCell(grid)
+  
+  if (!emptyCell) {
+    // 空のセルがない = 完成
+    return true
+  }
+  
+  const [row, col] = emptyCell
+  
+  // 1から9までの数字を試す
+  for (let num = 1; num <= 9; num++) {
+    if (isValidMove(grid, row, col, num)) {
+      // 数字を配置
+      grid[row][col] = num
+      
+      // 再帰的に続きを解く
+      if (solveSudokuRecursive(grid)) {
+        return true
+      }
+      
+      // 解けなかった場合は戻す（バックトラック）
+      grid[row][col] = 0
+    }
+  }
+  
+  return false // この経路では解けない
+}
+
+// 空のセルを見つける
+function findEmptyCell(grid: number[][]): [number, number] | null {
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (grid[row][col] === 0) {
+        return [row, col]
+      }
+    }
+  }
+  return null
+}
+
+// 数独が一意解を持つかチェック（オプション）
+export function hasUniqueSolution(grid: number[][]): boolean {
+  const solutions: number[][][] = []
+  const tempGrid = grid.map(row => [...row])
+  
+  findAllSolutions(tempGrid, solutions, 2) // 最大2つまで解を探す
+  
+  return solutions.length === 1
+}
+
+// すべての解を見つける（最大数まで）
+function findAllSolutions(grid: number[][], solutions: number[][][], maxSolutions: number): void {
+  if (solutions.length >= maxSolutions) {
+    return
+  }
+  
+  const emptyCell = findEmptyCell(grid)
+  
+  if (!emptyCell) {
+    // 解が見つかった
+    solutions.push(grid.map(row => [...row]))
+    return
+  }
+  
+  const [row, col] = emptyCell
+  
+  for (let num = 1; num <= 9; num++) {
+    if (isValidMove(grid, row, col, num)) {
+      grid[row][col] = num
+      findAllSolutions(grid, solutions, maxSolutions)
+      grid[row][col] = 0
+    }
+  }
 }
