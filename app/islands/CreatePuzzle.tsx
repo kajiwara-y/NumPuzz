@@ -49,7 +49,9 @@ export default function CreatePuzzle() {
       // メインゲーム画面にリダイレクト
       window.location.href = "/";
     } catch (error) {
-      alert(`問題の作成に失敗しました: ${error.message}`);
+      // エラーの型チェックを追加
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました'
+      alert(`問題の作成に失敗しました: ${errorMessage}`);
       console.error("Puzzle creation error:", error);
     }
   };

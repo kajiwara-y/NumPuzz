@@ -104,7 +104,7 @@ const autoSaveTimerRef = useRef<number | null>(null)
   // ゲーム完了チェック
   useEffect(() => {
     if (gameState && !isComplete) {
-      const complete = isGameComplete(gameState.currentGrid, gameState.puzzle.solution)
+      const complete = isGameComplete(gameState.currentGrid, gameState.puzzle.solution as number[][])
       if (complete) {
         setIsComplete(true)
         const completedState = {
