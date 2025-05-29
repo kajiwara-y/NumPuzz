@@ -249,3 +249,87 @@ export function clearAllMemos(memoGrid: MemoGrid): MemoGrid {
     Array(9).fill(null).map(() => new Set<number>())
   )
 }
+
+// 既存のコードに以下を追加（複雑な複数ゲーム管理機能は削除）
+
+// LocalStorageのキー
+const STORAGE_KEY = 'sudoku_current_game'
+
+// 現在のゲーム状態をLocalStorageに保存
+export function saveCurrentGame(gameState: SudokuState): boolean {
+  try {
+    // Setオブジェクトを配列に変換して保存
+    const stateToSave = {
+      ...gameState,
+      memoGrid: gameState.memoGrid.map(row => 
+        row.map(cell => Array.from(cell))
+      )
+    }
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
+    return true
+  } catch (error) {
+    console.error('Failed to save game:', error)
+    return false
+  }
+}
+
+// 現在のゲーム状態をLocalStorageから読み込み
+export function loadCurrentGame(): SudokuState | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return null
+    
+    const savedState = JSON.parse(stored)
+    
+    // 配列をSetオブジェクトに変換して復元
+    const restoredState: SudokuState = {
+      ...savedState,
+      memoGrid: savedState.memoGrid.map((row: number[][]) => 
+        row.map((cell: number[]) => new Set(cell))
+      )
+    }
+    
+    return restoredState
+  } catch (error) {
+    console.error('Failed to load game:', error)
+    return null
+  }
+}
+
+// 現在のゲームを削除（新しい問題を始める時用）
+export function clearCurrentGame(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch (error) {
+    console.error('Failed to clear game:', error)
+  }
+}
+
+// 保存されたゲームがあるかチェック
+export function hasSavedGame(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null
+  } catch (error) {
+    return false
+  }
+}
+
+// 進行率を計算する関数
+export function calculateProgress(currentGrid: number[][], initialGrid: number[][]): number {
+  let filledCells = 0
+  let totalEmptyCells = 0
+  
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (initialGrid[row][col] === 0) {
+        totalEmptyCells++
+        if (currentGrid[row][col] !== 0) {
+          filledCells++
+        }
+      }
+    }
+  }
+  
+  return totalEmptyCells === 0 ? 100 : Math.round((filledCells / totalEmptyCells) * 100)
+}

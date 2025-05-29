@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SudokuBoard from './SudokuBoard'
 import GameControls from './GameControls'
 import GameStatus from './GameStatus'
@@ -13,7 +13,11 @@ import {
   clearCellMemo,
   autoRemoveMemos,
   clearAllMemos,
-  MemoGrid
+  saveCurrentGame,
+  loadCurrentGame,
+  clearCurrentGame,
+  hasSavedGame,
+  calculateProgress
 } from '../utils/sudoku'
 
 // サンプル問題データ
@@ -51,12 +55,51 @@ export default function SudokuGame() {
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null)
   const [isComplete, setIsComplete] = useState(false)
   const [errors, setErrors] = useState<Set<string>>(new Set())
+  const [lastSaved, setLastSaved] = useState<string | null>(null)
+  const [showNewGameConfirm, setShowNewGameConfirm] = useState(false)
 
+// 自動保存用のタイマー
+const autoSaveTimerRef = useRef<number | null>(null)
+
+  // 初期化時に保存されたゲームを読み込み
   useEffect(() => {
-    // 初期状態を作成
-    const initialState = createInitialState(SAMPLE_PUZZLE)
-    setGameState(initialState)
+    const savedGame = loadCurrentGame()
+    if (savedGame) {
+      setGameState(savedGame)
+      setLastSaved('前回の続きから開始')
+      
+      // 既に完了していたかチェック
+      if (savedGame.completedAt) {
+        setIsComplete(true)
+      }
+    } else {
+      const initialState = createInitialState(SAMPLE_PUZZLE)
+      setGameState(initialState)
+    }
   }, [])
+
+  // 自動保存（30秒間隔）
+  useEffect(() => {
+    if (!gameState || isComplete) return
+
+    // 既存のタイマーをクリア
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    // 30秒後に自動保存
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      if (saveCurrentGame(gameState)) {
+        setLastSaved(new Date().toLocaleTimeString())
+      }
+    }, 30000) // 30秒
+
+    return () => {
+      if (autoSaveTimerRef.current !== null) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [gameState, isComplete])
 
   // ゲーム完了チェック
   useEffect(() => {
@@ -64,14 +107,29 @@ export default function SudokuGame() {
       const complete = isGameComplete(gameState.currentGrid, gameState.puzzle.solution)
       if (complete) {
         setIsComplete(true)
-        setGameState(prev => prev ? {
-          ...prev,
+        const completedState = {
+          ...gameState,
           completedAt: new Date().toISOString(),
-          timeSpent: calculateTimeSpent(prev.startedAt, new Date().toISOString())
-        } : null)
+          timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
+        }
+        setGameState(completedState)
+        
+        // 完了時に保存
+        saveCurrentGame(completedState)
+        setLastSaved('ゲーム完了！')
       }
     }
   }, [gameState?.currentGrid, isComplete])
+
+    // ゲーム状態更新時に即座に保存
+  const updateGameState = (newState: SudokuState) => {
+    setGameState(newState)
+    
+    // 状態変更時に即座に保存
+    if (saveCurrentGame(newState)) {
+      setLastSaved('保存済み')
+    }
+  }
 
   const handleCellSelect = (row: number, col: number) => {
     setSelectedCell([row, col])
@@ -118,7 +176,7 @@ export default function SudokuGame() {
         newMemoGrid = clearCellMemo(newMemoGrid, row, col)
       }
 
-      setGameState({
+      updateGameState({
         ...gameState,
         currentGrid: newGrid,
         memoGrid: newMemoGrid,
@@ -140,7 +198,7 @@ export default function SudokuGame() {
       // メモモードの場合：選択したセルのメモをすべてクリア
       const newMemoGrid = clearCellMemo(gameState.memoGrid, row, col)
       
-      setGameState({
+      updateGameState({
         ...gameState,
         memoGrid: newMemoGrid,
         lastModified: new Date().toISOString(),
@@ -155,7 +213,7 @@ export default function SudokuGame() {
     const handleToggleMemoryMode = () => {
     if (!gameState || isComplete) return
 
-    setGameState({
+    updateGameState({
       ...gameState,
       isMemoryMode: !gameState.isMemoryMode,
       lastModified: new Date().toISOString()
@@ -167,17 +225,44 @@ export default function SudokuGame() {
 
     const newMemoGrid = clearAllMemos(gameState.memoGrid)
     
-    setGameState({
+    updateGameState({
       ...gameState,
       memoGrid: newMemoGrid,
       lastModified: new Date().toISOString(),
       timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
     })
   }
+  // 新しいゲームを開始
+  const handleNewGame = () => {
+    if (hasSavedGame() && !isComplete) {
+      setShowNewGameConfirm(true)
+    } else {
+      startNewGame()
+    }
+  }
+
+  const startNewGame = () => {
+    clearCurrentGame()
+    const initialState = createInitialState(SAMPLE_PUZZLE)
+    setGameState(initialState)
+    setIsComplete(false)
+    setErrors(new Set())
+    setSelectedCell(null)
+    setLastSaved(null)
+    setShowNewGameConfirm(false)
+  }
+
+  const handleManualSave = () => {
+    if (gameState && saveCurrentGame(gameState)) {
+      setLastSaved('手動保存完了')
+    }
+  }
 
   if (!gameState) {
     return <div className="text-center">Loading...</div>
   }
+
+  const progress = calculateProgress(gameState.currentGrid, gameState.puzzle.initialGrid)
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -186,6 +271,35 @@ export default function SudokuGame() {
           gameState={gameState} 
           isComplete={isComplete}
         />
+
+        {/* 進行状況と保存状態 */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">
+              進行状況: <span className="font-medium">{progress}%</span>
+            </span>
+            {lastSaved && (
+              <span className="text-xs text-green-600">
+                💾 {lastSaved}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+              onClick={handleManualSave}
+              disabled={isComplete}
+            >
+              手動保存
+            </button>
+            <button
+              className="px-3 py-1 text-sm bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+              onClick={handleNewGame}
+            >
+              新しい問題
+            </button>
+          </div>
+        </div>
 
         {/* メモモード表示 */}
         {gameState.isMemoryMode && (
@@ -226,14 +340,51 @@ export default function SudokuGame() {
           </div>
         </div>
 
+        {/* 完了メッセージ */}
         {isComplete && (
           <div className="mt-6 p-4 bg-green-100 border border-green-300 rounded-lg text-center">
             <h3 className="text-lg font-bold text-green-800 mb-2">
               🎉 おめでとうございます！
             </h3>
-            <p className="text-green-700">
+            <p className="text-green-700 mb-3">
               ナンプレを完成させました！
             </p>
+            <div className="text-sm text-green-600">
+              <p>所要時間: {Math.floor(gameState.timeSpent / 60)}分{gameState.timeSpent % 60}秒</p>
+              {gameState.hintsUsed > 0 && (
+                <p>使用したヒント: {gameState.hintsUsed}回</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 新しいゲーム確認ダイアログ */}
+        {showNewGameConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">
+                新しい問題を開始しますか？
+              </h3>
+              <p className="text-gray-600 mb-6">
+                現在の進行状況（{progress}%）が失われます。
+                <br />
+                続行してもよろしいですか？
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  onClick={() => setShowNewGameConfirm(false)}
+                >
+                  キャンセル
+                </button>
+                <button
+                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                  onClick={startNewGame}
+                >
+                  新しい問題を開始
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
