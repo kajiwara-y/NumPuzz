@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PhotoAnalysisResult } from '../utils/sudoku'
+import { debugLog, isLocalDevelopment } from '../utils/debug'
 
 interface PhotoUploadProps {
   onPhotoAnalyzed: (result: PhotoAnalysisResult) => void
@@ -76,6 +77,7 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
   // 仮の関数（後でGemini AI APIを実装）
   const analyzeImageWithGemini = async (base64: string): Promise<PhotoAnalysisResult> => {
     try {
+      debugLog('Sending image to Gemini API', { imageSize: base64.length })
       const response = await fetch('/api/analyze-image', {
         method: 'POST',
         headers: {
@@ -85,12 +87,14 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
           image: base64
         })
       })
+      debugLog('Gemini API response status', response.status)
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
+      debugLog('Gemini API response data', data)
 
       if (!data.success) {
         throw new Error(data.error || 'API request failed')
@@ -105,6 +109,26 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
 
     } catch (error) {
       console.error('Gemini API error:', error)
+      
+      // フォールバック: 開発中はダミーデータを返す
+      if (isLocalDevelopment()) {
+        debugLog('Using fallback dummy data for development')
+        return {
+          success: true,
+          grid: [
+            [5, 3, 0, 0, 7, 0, 0, 0, 0],
+            [6, 0, 0, 1, 9, 5, 0, 0, 0],
+            [0, 9, 8, 0, 0, 0, 0, 6, 0],
+            [8, 0, 0, 0, 6, 0, 0, 0, 3],
+            [4, 0, 0, 8, 0, 3, 0, 0, 1],
+            [7, 0, 0, 0, 2, 0, 0, 0, 6],
+            [0, 6, 0, 0, 0, 0, 2, 8, 0],
+            [0, 0, 0, 4, 1, 9, 0, 0, 5],
+            [0, 0, 0, 0, 8, 0, 0, 7, 9]
+          ],
+          confidence: 0.85,
+          originalImage: `data:image/jpeg;base64,${base64}`
+        }
       }
       
       throw error
