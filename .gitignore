@@ -16,5 +16,4 @@ package-lock.json
 #!.yarn/cache
 .pnp.*
 
-.env.local
-.env
+.dev.vars*
