@@ -22,9 +22,9 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
       return
     }
 
-    // ファイルサイズチェック（5MB以下）
-    if (file.size > 5 * 1024 * 1024) {
-      setError('ファイルサイズは5MB以下にしてください')
+    // ファイルサイズチェック（10MB以下）
+    if (file.size > 10 * 1024 * 1024) {
+      setError('ファイルサイズは10MB以下にしてください')
       return
     }
 
@@ -51,7 +51,8 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
       
       onPhotoAnalyzed(result)
     } catch (err) {
-      setError('画像の解析に失敗しました。もう一度お試しください。')
+      const errorMessage = err instanceof Error ? err.message : '画像の解析に失敗しました'
+      setError(errorMessage)
       console.error('Analysis error:', err)
     } finally {
       setIsAnalyzing(false)
@@ -74,24 +75,39 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
 
   // 仮の関数（後でGemini AI APIを実装）
   const analyzeImageWithGemini = async (base64: string): Promise<PhotoAnalysisResult> => {
-    // TODO: Gemini AI APIを呼び出す
-    // 現在は仮のデータを返す
-    await new Promise(resolve => setTimeout(resolve, 2000)) // 2秒待機
-    
-    return {
-      success: true,
-      grid: [
-        [5, 3, 0, 0, 7, 0, 0, 0, 0],
-        [6, 0, 0, 1, 9, 5, 0, 0, 0],
-        [0, 9, 8, 0, 0, 0, 0, 6, 0],
-        [8, 0, 0, 0, 6, 0, 0, 0, 3],
-        [4, 0, 0, 8, 0, 3, 0, 0, 1],
-        [7, 0, 0, 0, 2, 0, 0, 0, 6],
-        [0, 6, 0, 0, 0, 0, 2, 8, 0],
-        [0, 0, 0, 4, 1, 9, 0, 0, 5],
-        [0, 0, 0, 0, 8, 0, 0, 7, 9]
-      ],
-      confidence: 0.85
+    try {
+      const response = await fetch('/api/analyze-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'API request failed')
+      }
+
+      return {
+        success: true,
+        grid: data.grid,
+        confidence: data.confidence,
+        originalImage: `data:image/jpeg;base64,${base64}`
+      }
+
+    } catch (error) {
+      console.error('Gemini API error:', error)
+      }
+      
+      throw error
     }
   }
 
