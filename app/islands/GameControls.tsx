@@ -79,19 +79,6 @@ export default function GameControls({
         )}
       </div>
 
-      {/* 将来実装予定の機能ボタン */}
-      <div className="space-y-2 pt-4 border-t border-gray-200">
-        <h3 className="text-lg font-semibold mb-3 text-gray-800">将来の機能</h3>
-        
-        <button
-          className="w-full py-2 bg-gray-300 text-gray-500 font-medium rounded-lg cursor-not-allowed"
-          disabled
-          title="将来実装予定"
-        >
-          📷 写真から作成
-        </button>
-      </div>
-
       {/* 完了時のメッセージ */}
       {isComplete && (
         <div className="pt-4 border-t border-gray-200">
