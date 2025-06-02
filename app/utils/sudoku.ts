@@ -38,7 +38,7 @@ export function createInitialState(puzzle: SudokuPuzzle): SudokuState {
   return {
     puzzle,
     currentGrid: puzzle.initialGrid.map(row => [...row]), // ディープコピー
-    memoGrid: Array(9).fill(null).map(() => 
+    memoGrid: Array(9).fill(null).map(() =>
       Array(9).fill(null).map(() => new Set<number>())
     ),
     startedAt: new Date().toISOString(),
@@ -80,7 +80,7 @@ export function isValidMove(grid: number[][], row: number, col: number, num: num
   // 3x3ブロックのチェック
   const blockRow = Math.floor(row / 3) * 3
   const blockCol = Math.floor(col / 3) * 3
-  
+
   for (let r = blockRow; r < blockRow + 3; r++) {
     for (let c = blockCol; c < blockCol + 3; c++) {
       if ((r !== row || c !== col) && grid[r][c] === num) {
@@ -100,11 +100,11 @@ export function saveGameToStorage(gameState: SudokuState): void {
       state: gameState,
       savedAt: new Date().toISOString()
     }
-    
+
     const existingGames = getStoredGames()
     const updatedGames = existingGames.filter(game => game.id !== gameState.puzzle.id)
     updatedGames.push(savedGame)
-    
+
     localStorage.setItem('sudoku_games', JSON.stringify(updatedGames))
   } catch (error) {
     console.error('Failed to save game to storage:', error)
@@ -199,13 +199,13 @@ export function getDifficultyLabel(difficulty: SudokuPuzzle['difficulty']): stri
 // メモを追加/削除する関数
 export function toggleMemo(memoGrid: MemoGrid, row: number, col: number, number: number): MemoGrid {
   const newMemoGrid = memoGrid.map(r => r.map(cell => new Set(cell)))
-  
+
   if (newMemoGrid[row][col].has(number)) {
     newMemoGrid[row][col].delete(number)
   } else {
     newMemoGrid[row][col].add(number)
   }
-  
+
   return newMemoGrid
 }
 
@@ -219,33 +219,33 @@ export function clearCellMemo(memoGrid: MemoGrid, row: number, col: number): Mem
 // 数字確定時に関連するメモを自動削除する関数
 export function autoRemoveMemos(memoGrid: MemoGrid, row: number, col: number, number: number): MemoGrid {
   const newMemoGrid = memoGrid.map(r => r.map(cell => new Set(cell)))
-  
+
   // 同じ行のメモから削除
   for (let c = 0; c < 9; c++) {
     newMemoGrid[row][c].delete(number)
   }
-  
+
   // 同じ列のメモから削除
   for (let r = 0; r < 9; r++) {
     newMemoGrid[r][col].delete(number)
   }
-  
+
   // 同じ3x3ブロックのメモから削除
   const blockRow = Math.floor(row / 3) * 3
   const blockCol = Math.floor(col / 3) * 3
-  
+
   for (let r = blockRow; r < blockRow + 3; r++) {
     for (let c = blockCol; c < blockCol + 3; c++) {
       newMemoGrid[r][c].delete(number)
     }
   }
-  
+
   return newMemoGrid
 }
 
 // 全メモをクリアする関数
 export function clearAllMemos(memoGrid: MemoGrid): MemoGrid {
-  return Array(9).fill(null).map(() => 
+  return Array(9).fill(null).map(() =>
     Array(9).fill(null).map(() => new Set<number>())
   )
 }
@@ -261,11 +261,11 @@ export function saveCurrentGame(gameState: SudokuState): boolean {
     // Setオブジェクトを配列に変換して保存
     const stateToSave = {
       ...gameState,
-      memoGrid: gameState.memoGrid.map(row => 
+      memoGrid: gameState.memoGrid.map(row =>
         row.map(cell => Array.from(cell))
       )
     }
-    
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
     return true
   } catch (error) {
@@ -279,17 +279,17 @@ export function loadCurrentGame(): SudokuState | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return null
-    
+
     const savedState = JSON.parse(stored)
-    
+
     // 配列をSetオブジェクトに変換して復元
     const restoredState: SudokuState = {
       ...savedState,
-      memoGrid: savedState.memoGrid.map((row: number[][]) => 
+      memoGrid: savedState.memoGrid.map((row: number[][]) =>
         row.map((cell: number[]) => new Set(cell))
       )
     }
-    
+
     return restoredState
   } catch (error) {
     console.error('Failed to load game:', error)
@@ -319,7 +319,7 @@ export function hasSavedGame(): boolean {
 export function calculateProgress(currentGrid: number[][], initialGrid: number[][]): number {
   let filledCells = 0
   let totalEmptyCells = 0
-  
+
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       if (initialGrid[row][col] === 0) {
@@ -330,7 +330,7 @@ export function calculateProgress(currentGrid: number[][], initialGrid: number[]
       }
     }
   }
-  
+
   return totalEmptyCells === 0 ? 100 : Math.round((filledCells / totalEmptyCells) * 100)
 }
 
@@ -345,13 +345,13 @@ export interface PhotoAnalysisResult {
 
 // 写真から作成された問題用の関数
 export function createPuzzleFromPhoto(
-  grid: number[][], 
+  grid: number[][],
   title?: string,
   originalImage?: string
 ): SudokuPuzzle {
   // 解答を生成
   const solution = solveSudoku(grid)
-  
+
   if (!solution) {
     throw new Error('この問題は解くことができません')
   }
@@ -360,7 +360,7 @@ export function createPuzzleFromPhoto(
     title: title || `写真から作成 - ${new Date().toLocaleString()}`,
     difficulty: estimateDifficulty(grid),
     initialGrid: grid.map(row => [...row]),
-    solution: solution, 
+    solution: solution,
     createdAt: new Date().toISOString(),
     source: 'upload',
     imageUrl: originalImage
@@ -370,7 +370,7 @@ export function createPuzzleFromPhoto(
 // 難易度を推定する関数
 function estimateDifficulty(grid: number[][]): SudokuPuzzle['difficulty'] {
   let filledCells = 0
-  
+
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       if (grid[row][col] !== 0) {
@@ -378,7 +378,7 @@ function estimateDifficulty(grid: number[][]): SudokuPuzzle['difficulty'] {
       }
     }
   }
-  
+
   // 埋まっているセル数で難易度を推定
   if (filledCells >= 50) return 'easy'
   if (filledCells >= 40) return 'medium'
@@ -410,11 +410,11 @@ export function isValidSudokuPuzzle(grid: number[][]): boolean {
 export function solveSudoku(grid: number[][]): number[][] | null {
   // グリッドをコピー
   const solution = grid.map(row => [...row])
-  
+
   if (solveSudokuRecursive(solution)) {
     return solution
   }
-  
+
   return null // 解けない場合
 }
 
@@ -422,30 +422,30 @@ export function solveSudoku(grid: number[][]): number[][] | null {
 function solveSudokuRecursive(grid: number[][]): boolean {
   // 空のセルを見つける
   const emptyCell = findEmptyCell(grid)
-  
+
   if (!emptyCell) {
     // 空のセルがない = 完成
     return true
   }
-  
+
   const [row, col] = emptyCell
-  
+
   // 1から9までの数字を試す
   for (let num = 1; num <= 9; num++) {
     if (isValidMove(grid, row, col, num)) {
       // 数字を配置
       grid[row][col] = num
-      
+
       // 再帰的に続きを解く
       if (solveSudokuRecursive(grid)) {
         return true
       }
-      
+
       // 解けなかった場合は戻す（バックトラック）
       grid[row][col] = 0
     }
   }
-  
+
   return false // この経路では解けない
 }
 
@@ -465,9 +465,9 @@ function findEmptyCell(grid: number[][]): [number, number] | null {
 export function hasUniqueSolution(grid: number[][]): boolean {
   const solutions: number[][][] = []
   const tempGrid = grid.map(row => [...row])
-  
+
   findAllSolutions(tempGrid, solutions, 2) // 最大2つまで解を探す
-  
+
   return solutions.length === 1
 }
 
@@ -476,17 +476,17 @@ function findAllSolutions(grid: number[][], solutions: number[][][], maxSolution
   if (solutions.length >= maxSolutions) {
     return
   }
-  
+
   const emptyCell = findEmptyCell(grid)
-  
+
   if (!emptyCell) {
     // 解が見つかった
     solutions.push(grid.map(row => [...row]))
     return
   }
-  
+
   const [row, col] = emptyCell
-  
+
   for (let num = 1; num <= 9; num++) {
     if (isValidMove(grid, row, col, num)) {
       grid[row][col] = num
@@ -494,4 +494,78 @@ function findAllSolutions(grid: number[][], solutions: number[][][], maxSolution
       grid[row][col] = 0
     }
   }
+}
+
+// 文字列形式の数独をパースする関数
+export function parseSudokuString(input: string): number[][] | null {
+  try {
+    const lines = input.trim().split('\n').filter(line => line.trim())
+
+    if (lines.length !== 9) {
+      return null
+    }
+
+    const grid: number[][] = []
+
+    for (let i = 0; i < 9; i++) {
+      const line = lines[i].trim()
+
+      if (line.length !== 9) {
+        return null
+      }
+
+      const row: number[] = []
+      for (let j = 0; j < 9; j++) {
+        const char = line[j]
+        if (char === '.' || char === '0' || char === ' ') {
+          row.push(0)
+        } else if (char >= '1' && char <= '9') {
+          row.push(parseInt(char))
+        } else {
+          return null
+        }
+      }
+      grid.push(row)
+    }
+
+    return grid
+  } catch (error) {
+    return null
+  }
+}
+
+// 数独グリッドを文字列に変換する関数
+export function sudokuGridToString(grid: number[][], emptyChar: string = '.'): string {
+  return grid.map(row =>
+    row.map(cell => cell === 0 ? emptyChar : cell.toString()).join('')
+  ).join('\n')
+}
+
+// 複数の形式をサポートするパーサー
+export function parseFlexibleSudokuString(input: string): number[][] | null {
+  // カンマ区切り、スペース区切り、連続文字など様々な形式に対応
+  const cleaned = input.replace(/[,\s]/g, '') // カンマとスペースを除去
+
+  if (cleaned.length === 81) {
+    // 81文字の連続文字列として処理
+    const grid: number[][] = []
+    for (let i = 0; i < 9; i++) {
+      const row: number[] = []
+      for (let j = 0; j < 9; j++) {
+        const char = cleaned[i * 9 + j]
+        if (char === '.' || char === '0' || char === ' ') {
+          row.push(0)
+        } else if (char >= '1' && char <= '9') {
+          row.push(parseInt(char))
+        } else {
+          return null
+        }
+      }
+      grid.push(row)
+    }
+    return grid
+  }
+
+  // 通常の改行区切り形式
+  return parseSudokuString(input)
 }
