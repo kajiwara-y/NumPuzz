@@ -61,15 +61,22 @@ export default function SudokuBoard({
     )
   }
 
-  // セルの関連性を判定する関数
+  // セルの関連性を判定する関数（拡張版）
   const getCellRelation = (row: number, col: number) => {
     if (!selectedCell) return 'none'
     
     const [selectedRow, selectedCol] = selectedCell
+    const selectedNumber = currentGrid[selectedRow][selectedCol]
+    const currentNumber = currentGrid[row][col]
     
     // 選択されたセル自体
     if (row === selectedRow && col === selectedCol) {
       return 'selected'
+    }
+    
+    // 同じ数字（0以外）
+    if (selectedNumber !== 0 && currentNumber === selectedNumber) {
+      return 'same-number'
     }
     
     // 同じ行
@@ -96,7 +103,8 @@ export default function SudokuBoard({
   }
 
   const getCellClassName = (row: number, col: number) => {
-    const baseClasses = "relative w-8 h-8 sm:w-10 sm:h-10 border border-gray-400 flex items-center justify-center text-sm sm:text-base font-medium cursor-pointer transition-colors"    
+    const baseClasses = "relative w-8 h-8 sm:w-10 sm:h-10 border border-gray-400 flex items-center justify-center text-sm sm:text-base font-medium cursor-pointer transition-colors"
+    
     // 初期値のセルかどうか
     const isInitial = initialGrid[row][col] !== 0
     
@@ -115,12 +123,22 @@ export default function SudokuBoard({
     if (col === 8) thickBorderClasses.push('border-r-2 border-r-gray-800')
     
     let colorClasses = ''
+    
     if (hasError) {
       // エラーは最優先
       colorClasses = 'bg-red-100 text-red-700 border-red-300'
     } else if (relation === 'selected') {
       // 選択されたセル
       colorClasses = isMemoryMode ? 'bg-purple-300 text-purple-900 shadow-inner' : 'bg-blue-300 text-blue-900 shadow-inner'
+    } else if (relation === 'same-number') {
+      // 同じ数字のセル（新機能）
+      if (isInitial) {
+        colorClasses = 'bg-yellow-200 text-gray-900'
+      } else if (isComplete) {
+        colorClasses = 'bg-yellow-100 text-green-800'
+      } else {
+        colorClasses = 'bg-yellow-200 text-gray-700'
+      }
     } else if (relation === 'same-row' || relation === 'same-col') {
       // 同じ行・列
       if (isInitial) {
