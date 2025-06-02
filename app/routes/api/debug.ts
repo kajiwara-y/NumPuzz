@@ -15,9 +15,6 @@ app.get('/', async (c) => {
   return c.json({
     hasGeminiKey: !!c.env.GEMINI_API_KEY,
     keyLength: c.env.GEMINI_API_KEY?.length || 0,
-    environment: c.env.ENVIRONMENT || 'unknown',
-    c_key: GEMINI_API_KEY,
-    c_env: ENVIRONMENT
   })
 })
 
