@@ -9,6 +9,7 @@
   },
   "private": true,
   "dependencies": {
+    "@hono/oidc-auth": "^1.6.0",
     "@hono/react-renderer": "^0.3.0",
     "hono": "^4.7.4",
     "honox": "^0.1.38",

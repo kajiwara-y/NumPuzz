@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { Env } from '../../types/env'
+import { getAuth } from '@hono/oidc-auth'
 
 const app = new Hono<Env>()
 
@@ -31,6 +32,8 @@ interface GeminiResponse {
 app.post('/', async (c) => {
   try {
     const apiKey = c.env.GEMINI_API_KEY
+    const allowUsers: string[] = c.env.ALLOW_USERS.split(',').map(user => user.trim())
+    const auth = await getAuth(c)
     
     if (!apiKey) {
       return c.json({ 
@@ -46,6 +49,29 @@ app.post('/', async (c) => {
         success: false, 
         error: 'No image provided' 
       }, 400)
+    }
+
+    // 段階的にチェックして型を絞り込む
+    if (!auth?.email) {
+      return c.json({ 
+        success: false, 
+        error: 'Email is required.' 
+      }, 500)
+    }
+
+    if (typeof auth.email !== 'string') {
+      return c.json({ 
+        success: false, 
+        error: 'Invalid email format.' 
+      }, 500)
+    }
+
+    // この時点で auth.email は string 型として確定
+    if (!allowUsers.includes(auth.email)) {
+      return c.json({ 
+        success: false, 
+        error: 'You are Not Allowed User.' 
+      }, 500)
     }
 
     // Gemini API呼び出し
