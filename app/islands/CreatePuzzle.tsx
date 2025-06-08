@@ -27,7 +27,7 @@ export default function CreatePuzzle() {
   };
 
   // 問題編集完了
-  const handlePuzzleSaved = (editedGrid: number[][]) => {
+  const handlePuzzleSaved = async (editedGrid: number[][]) => {
     try {
       if (!isValidSudokuPuzzle(editedGrid)) {
         alert("無効な数独問題です。ルール違反を修正してください。");
@@ -44,13 +44,24 @@ export default function CreatePuzzle() {
       // 現在のゲームをクリアして新しい問題を保存
       clearCurrentGame();
       const initialState = createInitialState(newPuzzle);
-      saveCurrentGame(initialState);
+
+      // 保存処理を確実に完了させる
+      const saveSuccess = saveCurrentGame(initialState);
+
+      if (!saveSuccess) {
+        alert("問題の保存に失敗しました。もう一度お試しください。");
+        return;
+      }
+
+      // 少し待ってから画面遷移（LocalStorageの書き込み完了を保証）
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // メインゲーム画面にリダイレクト
       window.location.href = "/";
     } catch (error) {
       // エラーの型チェックを追加
-      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました'
+      const errorMessage =
+        error instanceof Error ? error.message : "不明なエラーが発生しました";
       alert(`問題の作成に失敗しました: ${errorMessage}`);
       console.error("Puzzle creation error:", error);
     }
