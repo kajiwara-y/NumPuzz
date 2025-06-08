@@ -260,176 +260,60 @@ export function saveCurrentGame(gameState: SudokuState): boolean {
   console.log('=== saveCurrentGame START ===');
   
   try {
-    // 1. 入力データの検証
-    console.log('Input gameState:', {
-      puzzleId: gameState?.puzzle?.id,
-      hasCurrentGrid: !!gameState?.currentGrid,
-      hasMemoGrid: !!gameState?.memoGrid,
-      memoGridType: typeof gameState?.memoGrid,
-      memoGridLength: gameState?.memoGrid?.length
-    });
-
-    // 2. memoGridの詳細チェック
-    if (gameState?.memoGrid) {
-      console.log('MemoGrid structure check:');
-      for (let i = 0; i < Math.min(3, gameState.memoGrid.length); i++) {
-        const row = gameState.memoGrid[i];
-        console.log(`Row ${i}:`, {
-          type: typeof row,
-          isArray: Array.isArray(row),
-          length: row?.length,
-          firstCellType: typeof row?.[0],
-          firstCellIsSet: row?.[0] instanceof Set,
-          firstCellSize: row?.[0]?.size
-        });
-      }
-    }
-
-    console.log('Converting memoGrid...');
-    
-    // 3. 変換処理のステップ別ログ
-    const convertedMemoGrid = gameState.memoGrid.map((row, rowIndex) => {
-      console.log(`Converting row ${rowIndex}:`, {
-        rowType: typeof row,
-        isArray: Array.isArray(row),
-        length: row?.length
-      });
-      
-      return row.map((cell, colIndex) => {
-        const cellInfo = {
-          rowIndex,
-          colIndex,
-          cellType: typeof cell,
-          isSet: cell instanceof Set,
-          size: cell?.size,
-          values: cell instanceof Set ? Array.from(cell) : 'NOT_SET'
-        };
-        
-        if (rowIndex < 2 && colIndex < 2) { // 最初の数セルだけログ出力
-          console.log(`Cell [${rowIndex}][${colIndex}]:`, cellInfo);
-        }
-        
-        if (!(cell instanceof Set)) {
-          console.error(`Invalid cell at [${rowIndex}][${colIndex}]:`, cell);
-          throw new Error(`Cell at [${rowIndex}][${colIndex}] is not a Set`);
-        }
-        
-        return Array.from(cell);
-      });
-    });
-
-    console.log('MemoGrid conversion completed');
-
-    // 4. 保存データの構築
-    console.log('Building stateToSave...');
-    const stateToSave = {
-      ...gameState,
-      memoGrid: convertedMemoGrid
+    // 軽量版のステートを作成（画像データなどを除外）
+    const lightweightState = {
+      puzzle: {
+        id: gameState.puzzle.id,
+        title: gameState.puzzle.title,
+        difficulty: gameState.puzzle.difficulty,
+        initialGrid: gameState.puzzle.initialGrid,
+        solution: gameState.puzzle.solution,
+        createdAt: gameState.puzzle.createdAt,
+        source: gameState.puzzle.source
+        // imageUrl は除外（5MB以上になる可能性があるため）
+      },
+      currentGrid: gameState.currentGrid,
+      memoGrid: gameState.memoGrid.map(row =>
+        row.map(cell => Array.from(cell))
+      ),
+      startedAt: gameState.startedAt,
+      lastModified: gameState.lastModified,
+      timeSpent: gameState.timeSpent,
+      hintsUsed: gameState.hintsUsed,
+      isMemoryMode: gameState.isMemoryMode,
+      // completedAtを最初から含める（undefinedの可能性あり）
+      ...(gameState.completedAt && { completedAt: gameState.completedAt })
     };
 
-    console.log('StateToSave structure:', {
-      hasPuzzle: !!stateToSave.puzzle,
-      hasCurrentGrid: !!stateToSave.currentGrid,
-      hasMemoGrid: !!stateToSave.memoGrid,
-      memoGridType: typeof stateToSave.memoGrid,
-      puzzleId: stateToSave.puzzle?.id
-    });
-
-    // 5. JSON変換前のサイズチェック
-    console.log('Converting to JSON...');
-    const jsonString = JSON.stringify(stateToSave);
+    const jsonString = JSON.stringify(lightweightState);
     const sizeInBytes = new Blob([jsonString]).size;
     const sizeInKB = Math.round(sizeInBytes / 1024);
     
-    console.log('JSON conversion completed:', {
+    console.log('Lightweight data size:', {
       stringLength: jsonString.length,
       sizeInBytes,
       sizeInKB: `${sizeInKB}KB`
     });
 
-    // 6. LocalStorage容量チェック
-    console.log('Checking localStorage availability...');
-    
-    // LocalStorageの基本テスト
-    const testKey = 'test_' + Date.now();
-    localStorage.setItem(testKey, 'test');
-    localStorage.removeItem(testKey);
-    console.log('LocalStorage basic test: OK');
-
-    // 7. 実際の保存処理
-    console.log(`Saving to localStorage with key: ${STORAGE_KEY}`);
-    localStorage.setItem(STORAGE_KEY, jsonString);
-    
-    // 8. 保存確認
-    console.log('Verifying save...');
-    const savedData = localStorage.getItem(STORAGE_KEY);
-    const saveVerified = savedData !== null && savedData.length === jsonString.length;
-    
-    console.log('Save verification:', {
-      saved: !!savedData,
-      lengthMatch: savedData?.length === jsonString.length,
-      originalLength: jsonString.length,
-      savedLength: savedData?.length
-    });
-
-    if (!saveVerified) {
-      throw new Error('Save verification failed');
+    // サイズチェック（1MB以上の場合は警告）
+    if (sizeInBytes > 1024 * 1024) {
+      console.warn('Data still too large:', sizeInKB + 'KB');
+      return false;
     }
 
+    localStorage.setItem(STORAGE_KEY, jsonString);
+    
     console.log('=== saveCurrentGame SUCCESS ===');
     return true;
     
   } catch (error) {
     console.error('=== saveCurrentGame ERROR ===');
-    
-    // 型安全なエラーハンドリング
     if (error instanceof Error) {
       console.error('Error details:', {
         name: error.name,
-        message: error.message,
-        stack: error.stack
+        message: error.message
       });
-      
-      // エラーの種類別の詳細ログ
-      if (error.name === 'QuotaExceededError') {
-        console.error('LocalStorage quota exceeded');
-        
-        // 現在のLocalStorage使用量を調査
-        let totalSize = 0;
-        const items = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key) {
-            const value = localStorage.getItem(key);
-            const size = value ? new Blob([value]).size : 0;
-            totalSize += size;
-            items.push({ key, size });
-          }
-        }
-        
-        console.error('LocalStorage usage:', {
-          totalItems: localStorage.length,
-          totalSizeKB: Math.round(totalSize / 1024),
-          items: items.slice(0, 5) // 最初の5項目だけ表示
-        });
-      }
-      
-      if (error.name === 'TypeError') {
-        console.error('Type error - possibly invalid data structure');
-      }
-      
-      if (error.message.includes('JSON')) {
-        console.error('JSON serialization error');
-      }
-    } else {
-      // Errorオブジェクトでない場合
-      console.error('Unknown error type:', error);
-      console.error('Error string representation:', String(error));
     }
-    
-    console.error('Full error object:', error);
-    console.error('=== saveCurrentGame END (ERROR) ===');
-    
     return false;
   }
 }
@@ -523,7 +407,6 @@ export function createPuzzleFromPhoto(
     solution: solution,
     createdAt: new Date().toISOString(),
     source: 'upload',
-    imageUrl: originalImage
   }
 }
 
