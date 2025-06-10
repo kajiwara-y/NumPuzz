@@ -336,6 +336,7 @@ const autoSaveTimerRef = useRef<number | null>(null)
               selectedCell={selectedCell}
               isComplete={isComplete}
               isMemoryMode={gameState.isMemoryMode}
+              currentGrid={gameState.currentGrid} 
             />
           </div>
         </div>

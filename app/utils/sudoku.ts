@@ -612,3 +612,26 @@ export function parseFlexibleSudokuString(input: string): number[][] | null {
   // 通常の改行区切り形式
   return parseSudokuString(input)
 }
+
+// 使い切った数字を判定する関数
+export function getCompletedNumbers(currentGrid: number[][]): Set<number> {
+  const numberCounts = new Map<number, number>();
+  
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const num = currentGrid[row][col];
+      if (num !== 0) {
+        numberCounts.set(num, (numberCounts.get(num) || 0) + 1);
+      }
+    }
+  }
+  
+  const completed = new Set<number>();
+  for (let num = 1; num <= 9; num++) {
+    if (numberCounts.get(num) === 9) {
+      completed.add(num);
+    }
+  }
+  
+  return completed;
+}
