@@ -7,7 +7,6 @@ import {
   SudokuState, 
   createInitialState, 
   isGameComplete,
-  isValidMove,
   calculateTimeSpent,
   toggleMemo,
   clearCellMemo,
@@ -15,13 +14,8 @@ import {
   clearAllMemos,
   saveCurrentGame,
   loadCurrentGame,
-  clearCurrentGame,
-  hasSavedGame,
   calculateProgress,
-  getCompletedNumbers,
   findConflicts,
-  GameSnapshot,
-  createSnapshot
 } from '../utils/sudoku'
 
 // サンプル問題データ
@@ -54,14 +48,18 @@ const SAMPLE_PUZZLE: SudokuPuzzle = {
   createdAt: new Date().toISOString()
 }
 
-export default function SudokuGame() {
+interface SudokuGameProps {
+  onHeaderVisibilityChange?: (isVisible: boolean) => void
+}
+
+export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps) {
   const [gameState, setGameState] = useState<SudokuState | null>(null)
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null)
   const [isComplete, setIsComplete] = useState(false)
   const [errors, setErrors] = useState<Set<string>>(new Set())
   const [lastSaved, setLastSaved] = useState<string | null>(null)
-  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [conflicts, setConflicts] = useState<Set<string>>(new Set())
+  const [gameStarted, setGameStarted] = useState(false)
 
   // 自動保存用のタイマー
   const autoSaveTimerRef = useRef<number | null>(null)
@@ -73,9 +71,13 @@ export default function SudokuGame() {
       setGameState(savedGame)
       setLastSaved('前回の続きから開始')
       
-      // 既に完了していたかチェック
       if (savedGame.completedAt) {
         setIsComplete(true)
+      }
+      
+      const progress = calculateProgress(savedGame.currentGrid, savedGame.puzzle.initialGrid)
+      if (progress > 0) {
+        setGameStarted(true)
       }
     } else {
       const initialState = createInitialState(SAMPLE_PUZZLE)
@@ -83,21 +85,37 @@ export default function SudokuGame() {
     }
   }, [])
 
+  // ゲーム開始状態が変わったらヘッダーの表示状態を通知
+  useEffect(() => {
+    console.log('Game started:', gameStarted, 'Complete:', isComplete)
+    if (onHeaderVisibilityChange) {
+      if (isComplete) {
+        // ゲーム完了時は必ず表示
+        onHeaderVisibilityChange(true)
+      } else if (gameStarted) {
+        // ゲーム開始時は非表示を提案（手動非表示の場合は無視される）
+        onHeaderVisibilityChange(false)
+      } else {
+        // 初期状態では表示
+        onHeaderVisibilityChange(true)
+      }
+    }
+  }, [gameStarted, isComplete, onHeaderVisibilityChange])
+
+
   // 自動保存（30秒間隔）
   useEffect(() => {
     if (!gameState || isComplete) return
 
-    // 既存のタイマーをクリア
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
     }
 
-    // 30秒後に自動保存
     autoSaveTimerRef.current = window.setTimeout(() => {
       if (saveCurrentGame(gameState)) {
         setLastSaved(new Date().toLocaleTimeString())
       }
-    }, 30000) // 30秒
+    }, 30000)
 
     return () => {
       if (autoSaveTimerRef.current !== null) {
@@ -119,27 +137,25 @@ export default function SudokuGame() {
         }
         setGameState(completedState)
         
-        // 完了時に保存
         saveCurrentGame(completedState)
         setLastSaved('ゲーム完了！')
       }
     }
   }, [gameState?.currentGrid, isComplete])
 
-  // 矛盾チェック（グリッド変更時に実行）
+  // 矛盾チェック
   useEffect(() => {
     if (gameState) {
       const newConflicts = findConflicts(gameState.currentGrid)
       setConflicts(newConflicts)
-      setErrors(newConflicts) // errorsも更新してSudokuBoardに反映
+      setErrors(newConflicts)
     }
   }, [gameState?.currentGrid])
 
-  // ゲーム状態更新時に即座に保存
+  // ゲーム状態更新
   const updateGameState = (newState: SudokuState) => {
     setGameState(newState)
     
-    // 状態変更時に即座に保存
     if (saveCurrentGame(newState)) {
       setLastSaved('保存済み')
     }
@@ -154,11 +170,14 @@ export default function SudokuGame() {
 
     const [row, col] = selectedCell
     
-    // 初期値のセルは変更できない
     if (gameState.puzzle.initialGrid[row][col] !== 0) return
 
+    if (!gameStarted) {
+      console.log('Setting game started to true') // デバッグ用
+      setGameStarted(true)
+    }
+
     if (gameState.isMemoryMode) {
-      // メモモードの場合
       const newMemoGrid = toggleMemo(gameState.memoGrid, row, col, number)
       
       setGameState({
@@ -168,18 +187,15 @@ export default function SudokuGame() {
         timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
       })
     } else {
-      // 通常入力モードの場合
       const newGrid = gameState.currentGrid.map((r, rowIndex) =>
         r.map((cell, colIndex) =>
           rowIndex === row && colIndex === col ? number : cell
         )
       )
 
-      // 数字を確定入力した場合、関連するメモを自動削除
       let newMemoGrid = gameState.memoGrid
       if (number !== 0) {
         newMemoGrid = autoRemoveMemos(gameState.memoGrid, row, col, number)
-        // 入力したセルのメモもクリア
         newMemoGrid = clearCellMemo(newMemoGrid, row, col)
       }
 
@@ -198,11 +214,9 @@ export default function SudokuGame() {
 
     const [row, col] = selectedCell
     
-    // 初期値のセルは変更できない
     if (gameState.puzzle.initialGrid[row][col] !== 0) return
 
     if (gameState.isMemoryMode) {
-      // メモモードの場合：選択したセルのメモをすべてクリア
       const newMemoGrid = clearCellMemo(gameState.memoGrid, row, col)
       
       updateGameState({
@@ -212,7 +226,6 @@ export default function SudokuGame() {
         timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
       })
     } else {
-      // 通常モードの場合：数字をクリア
       handleNumberInput(0)
     }
   }
@@ -240,7 +253,6 @@ export default function SudokuGame() {
     })
   }
 
-  // 最初からやり直し機能
   const handleResetToInitial = () => {
     if (!gameState) return
 
@@ -258,6 +270,7 @@ export default function SudokuGame() {
         ),
         lastModified: new Date().toISOString()
       })
+      setGameStarted(false)
     }
   }
 
@@ -369,7 +382,7 @@ export default function SudokuGame() {
             🎉 おめでとうございます！
           </div>
 
-                    <div className="text-lg font-medium text-green-800">
+          <div className="text-lg font-medium text-green-800">
             ナンプレを完成させました！
           </div>
 
@@ -380,7 +393,6 @@ export default function SudokuGame() {
             )}
           </div>
 
-          {/* 完了後は写真から新しい問題作成を促す */}
           <div className="pt-3 border-t border-green-200">
             <a
               href="/create"
