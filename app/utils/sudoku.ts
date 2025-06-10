@@ -635,3 +635,64 @@ export function getCompletedNumbers(currentGrid: number[][]): Set<number> {
   
   return completed;
 }
+
+// 矛盾検出機能
+export function findConflicts(grid: number[][]): Set<string> {
+  const conflicts = new Set<string>();
+  
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const num = grid[row][col];
+      if (num !== 0) {
+        // 行の重複チェック
+        for (let c = col + 1; c < 9; c++) {
+          if (grid[row][c] === num) {
+            conflicts.add(`${row}-${col}`);
+            conflicts.add(`${row}-${c}`);
+          }
+        }
+        
+        // 列の重複チェック
+        for (let r = row + 1; r < 9; r++) {
+          if (grid[r][col] === num) {
+            conflicts.add(`${row}-${col}`);
+            conflicts.add(`${r}-${col}`);
+          }
+        }
+        
+        // 3x3ブロックの重複チェック
+        const blockRow = Math.floor(row / 3) * 3;
+        const blockCol = Math.floor(col / 3) * 3;
+        
+        for (let r = blockRow; r < blockRow + 3; r++) {
+          for (let c = blockCol; c < blockCol + 3; c++) {
+            if ((r > row || (r === row && c > col)) && grid[r][c] === num) {
+              conflicts.add(`${row}-${col}`);
+              conflicts.add(`${r}-${c}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return conflicts;
+}
+
+// 履歴管理用の型定義
+export interface GameSnapshot {
+  currentGrid: number[][];
+  memoGrid: MemoGrid;
+  timestamp: string;
+  description: string;
+}
+
+// 履歴管理機能
+export function createSnapshot(gameState: SudokuState, description: string): GameSnapshot {
+  return {
+    currentGrid: gameState.currentGrid.map(row => [...row]),
+    memoGrid: gameState.memoGrid.map(row => row.map(cell => new Set(cell))),
+    timestamp: new Date().toISOString(),
+    description
+  };
+}

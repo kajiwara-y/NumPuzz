@@ -17,7 +17,11 @@ import {
   loadCurrentGame,
   clearCurrentGame,
   hasSavedGame,
-  calculateProgress
+  calculateProgress,
+  getCompletedNumbers,
+  findConflicts,
+  GameSnapshot,
+  createSnapshot
 } from '../utils/sudoku'
 
 // サンプル問題データ
@@ -57,9 +61,11 @@ export default function SudokuGame() {
   const [errors, setErrors] = useState<Set<string>>(new Set())
   const [lastSaved, setLastSaved] = useState<string | null>(null)
   const [showNewGameConfirm, setShowNewGameConfirm] = useState(false)
+  const [snapshots, setSnapshots] = useState<GameSnapshot[]>([])
+  const [conflicts, setConflicts] = useState<Set<string>>(new Set())
 
-// 自動保存用のタイマー
-const autoSaveTimerRef = useRef<number | null>(null)
+  // 自動保存用のタイマー
+  const autoSaveTimerRef = useRef<number | null>(null)
 
   // 初期化時に保存されたゲームを読み込み
   useEffect(() => {
@@ -121,7 +127,16 @@ const autoSaveTimerRef = useRef<number | null>(null)
     }
   }, [gameState?.currentGrid, isComplete])
 
-    // ゲーム状態更新時に即座に保存
+  // 矛盾チェック（グリッド変更時に実行）
+  useEffect(() => {
+    if (gameState) {
+      const newConflicts = findConflicts(gameState.currentGrid)
+      setConflicts(newConflicts)
+      setErrors(newConflicts) // errorsも更新してSudokuBoardに反映
+    }
+  }, [gameState?.currentGrid])
+
+  // ゲーム状態更新時に即座に保存
   const updateGameState = (newState: SudokuState) => {
     setGameState(newState)
     
@@ -129,6 +144,21 @@ const autoSaveTimerRef = useRef<number | null>(null)
     if (saveCurrentGame(newState)) {
       setLastSaved('保存済み')
     }
+  }
+
+  // スナップショット作成（重要な操作前に自動実行）
+  const createGameSnapshot = (description: string) => {
+    if (!gameState) return
+    
+    const snapshot = createSnapshot(gameState, description)
+    setSnapshots(prev => {
+      const newSnapshots = [...prev, snapshot]
+      // 最大10個まで保持
+      if (newSnapshots.length > 10) {
+        newSnapshots.shift()
+      }
+      return newSnapshots
+    })
   }
 
   const handleCellSelect = (row: number, col: number) => {
@@ -142,6 +172,11 @@ const autoSaveTimerRef = useRef<number | null>(null)
     
     // 初期値のセルは変更できない
     if (gameState.puzzle.initialGrid[row][col] !== 0) return
+
+    // 重要な変更前にスナップショット作成
+    if (number !== 0 && gameState.currentGrid[row][col] === 0) {
+      createGameSnapshot(`数字${number}を[${row+1},${col+1}]に配置`)
+    }
 
     if (gameState.isMemoryMode) {
       // メモモードの場合
@@ -160,13 +195,6 @@ const autoSaveTimerRef = useRef<number | null>(null)
           rowIndex === row && colIndex === col ? number : cell
         )
       )
-
-      // バリデーションチェック
-      const newErrors = new Set<string>()
-      if (number !== 0 && !isValidMove(newGrid, row, col, number)) {
-        newErrors.add(`${row}-${col}`)
-      }
-      setErrors(newErrors)
 
       // 数字を確定入力した場合、関連するメモを自動削除
       let newMemoGrid = gameState.memoGrid
@@ -210,7 +238,7 @@ const autoSaveTimerRef = useRef<number | null>(null)
     }
   }
 
-    const handleToggleMemoryMode = () => {
+  const handleToggleMemoryMode = () => {
     if (!gameState || isComplete) return
 
     updateGameState({
@@ -232,6 +260,51 @@ const autoSaveTimerRef = useRef<number | null>(null)
       timeSpent: calculateTimeSpent(gameState.startedAt, new Date().toISOString())
     })
   }
+
+  // リセット機能
+  const handleResetToSnapshot = (snapshotIndex: number) => {
+    if (!gameState || !snapshots[snapshotIndex]) return
+
+    const snapshot = snapshots[snapshotIndex]
+    const confirm = window.confirm(
+      `${snapshot.description}の状態に戻しますか？\n` +
+      `(${new Date(snapshot.timestamp).toLocaleString()})`
+    )
+
+    if (confirm) {
+      updateGameState({
+        ...gameState,
+        currentGrid: snapshot.currentGrid.map(row => [...row]),
+        memoGrid: snapshot.memoGrid.map(row => row.map(cell => new Set(cell))),
+        lastModified: new Date().toISOString()
+      })
+      
+      // 使用したスナップショット以降を削除
+      setSnapshots(prev => prev.slice(0, snapshotIndex))
+    }
+  }
+
+  const handleResetToInitial = () => {
+    if (!gameState) return
+
+    const confirm = window.confirm(
+      '初期状態に戻しますか？\n' +
+      '入力した数字とメモがすべて削除されます。'
+    )
+
+    if (confirm) {
+      updateGameState({
+        ...gameState,
+        currentGrid: gameState.puzzle.initialGrid.map(row => [...row]),
+        memoGrid: Array(9).fill(null).map(() =>
+          Array(9).fill(null).map(() => new Set())
+        ),
+        lastModified: new Date().toISOString()
+      })
+      setSnapshots([])
+    }
+  }
+
   // 新しいゲームを開始
   const handleNewGame = () => {
     if (hasSavedGame() && !isComplete) {
@@ -250,6 +323,8 @@ const autoSaveTimerRef = useRef<number | null>(null)
     setSelectedCell(null)
     setLastSaved(null)
     setShowNewGameConfirm(false)
+    setSnapshots([])
+    setConflicts(new Set())
   }
 
   const handleManualSave = () => {
@@ -259,136 +334,183 @@ const autoSaveTimerRef = useRef<number | null>(null)
   }
 
   if (!gameState) {
-    return <div className="text-center">Loading...</div>
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
   }
 
   const progress = calculateProgress(gameState.currentGrid, gameState.puzzle.initialGrid)
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <GameStatus 
-          gameState={gameState} 
-          isComplete={isComplete}
-        />
+    <div className="max-w-md mx-auto p-4 space-y-4">
+      <GameStatus gameState={gameState} isComplete={isComplete} />
 
-        {/* 進行状況と保存状態 */}
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
-              進行状況: <span className="font-medium">{progress}%</span>
+      {/* 進行状況と保存状態 */}
+      <div className="flex justify-between items-center text-sm">
+        <div className="space-x-4">
+          <span className="text-gray-600">
+            進行状況: {progress}%
+          </span>
+          {lastSaved && (
+            <span className="text-green-600">
+              💾 {lastSaved}
             </span>
-            {lastSaved && (
-              <span className="text-xs text-green-600">
-                💾 {lastSaved}
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
-              onClick={handleManualSave}
-              disabled={isComplete}
-            >
-              手動保存
-            </button>
-            <button
-              className="px-3 py-1 text-sm bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
-              onClick={handleNewGame}
-            >
-              新しい問題
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* メモモード表示 */}
-        {gameState.isMemoryMode && (
-          <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <span className="text-purple-600 font-medium">📝 メモモード</span>
-              <span className="text-sm text-purple-500">
-                数字をクリックしてメモを追加/削除できます
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div className="flex flex-col lg:flex-row gap-6">
-          <div className="flex-1">
-            <SudokuBoard
-              currentGrid={gameState.currentGrid}
-              initialGrid={gameState.puzzle.initialGrid}
-              memoGrid={gameState.memoGrid}
-              selectedCell={selectedCell}
-              onCellSelect={handleCellSelect}
-              errors={errors}
-              isComplete={isComplete}
-              isMemoryMode={gameState.isMemoryMode}
-            />
-          </div>
-
-          <div className="lg:w-64">
-            <GameControls
-              onNumberInput={handleNumberInput}
-              onClearCell={handleClearCell}
-              onToggleMemoryMode={handleToggleMemoryMode}
-              onClearAllMemos={handleClearAllMemos}
-              selectedCell={selectedCell}
-              isComplete={isComplete}
-              isMemoryMode={gameState.isMemoryMode}
-              currentGrid={gameState.currentGrid} 
-            />
-          </div>
+        <div className="space-x-2">
+          <button
+            className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200"
+            onClick={handleManualSave}
+          >
+            手動保存
+          </button>
+          <button
+            className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200"
+            onClick={handleNewGame}
+          >
+            新しい問題
+          </button>
         </div>
+      </div>
 
-        {/* 完了メッセージ */}
-        {isComplete && (
-          <div className="mt-6 p-4 bg-green-100 border border-green-300 rounded-lg text-center">
-            <h3 className="text-lg font-bold text-green-800 mb-2">
-              🎉 おめでとうございます！
-            </h3>
-            <p className="text-green-700 mb-3">
-              ナンプレを完成させました！
-            </p>
-            <div className="text-sm text-green-600">
-              <p>所要時間: {Math.floor(gameState.timeSpent / 60)}分{gameState.timeSpent % 60}秒</p>
-              {gameState.hintsUsed > 0 && (
-                <p>使用したヒント: {gameState.hintsUsed}回</p>
-              )}
-            </div>
+      {/* 矛盾警告 */}
+      {conflicts.size > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-center space-x-2">
+            <span className="text-red-600">⚠️</span>
+            <span className="text-red-700 font-medium">
+              矛盾を検出しました ({conflicts.size}箇所)
+            </span>
           </div>
-        )}
+          <p className="text-red-600 text-sm mt-1">
+            赤色のセルを確認してください
+          </p>
+        </div>
+      )}
 
-        {/* 新しいゲーム確認ダイアログ */}
-        {showNewGameConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md mx-4">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">
-                新しい問題を開始しますか？
-              </h3>
-              <p className="text-gray-600 mb-6">
-                現在の進行状況（{progress}%）が失われます。
-                <br />
-                続行してもよろしいですか？
-              </p>
-              <div className="flex gap-3 justify-end">
-                <button
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                  onClick={() => setShowNewGameConfirm(false)}
-                >
-                  キャンセル
-                </button>
-                <button
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
-                  onClick={startNewGame}
-                >
-                  新しい問題を開始
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* リセット機能 */}
+      <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+        <h3 className="text-sm font-medium text-gray-700">操作履歴</h3>
+        
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
+            onClick={handleResetToInitial}
+          >
+            🔄 最初から
+          </button>
+          
+          {snapshots.slice(-3).map((snapshot, index) => {
+            const actualIndex = snapshots.length - 3 + index
+            return (
+              <button
+                key={actualIndex}
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200"
+                onClick={() => handleResetToSnapshot(actualIndex)}
+                title={new Date(snapshot.timestamp).toLocaleString()}
+              >
+                ↶ {snapshot.description}
+              </button>
+            )
+          })}
+        </div>
+        
+        {snapshots.length === 0 && (
+          <p className="text-gray-500 text-sm">履歴はありません</p>
         )}
       </div>
+
+      {/* メモモード表示 */}
+      {gameState.isMemoryMode && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+          <div className="flex items-center space-x-2">
+            <span className="text-purple-600">📝 メモモード</span>
+            <span className="text-purple-600 text-sm">
+              数字をクリックしてメモを追加/削除できます
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4">
+        <div className="flex justify-center">
+          <SudokuBoard
+            currentGrid={gameState.currentGrid}
+            initialGrid={gameState.puzzle.initialGrid}
+            memoGrid={gameState.memoGrid}
+            selectedCell={selectedCell}
+            onCellSelect={handleCellSelect}
+            errors={errors}
+            isComplete={isComplete}
+            isMemoryMode={gameState.isMemoryMode}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <GameControls
+            onNumberInput={handleNumberInput}
+            onClearCell={handleClearCell}
+            onToggleMemoryMode={handleToggleMemoryMode}
+            onClearAllMemos={handleClearAllMemos}
+            selectedCell={selectedCell}
+            isComplete={isComplete}
+            isMemoryMode={gameState.isMemoryMode}
+            currentGrid={gameState.currentGrid}
+          />
+        </div>
+      </div>
+
+      {/* 完了メッセージ */}
+      {isComplete && (
+        <div className="text-center space-y-2 p-4 bg-green-50 rounded-lg border border-green-200">
+          <div className="text-green-700 font-bold text-xl">
+            🎉 おめでとうございます！
+          </div>
+
+          <div className="text-green-600">
+            ナンプレを完成させました！
+          </div>
+
+          <div className="text-green-600 text-sm">
+            所要時間: {Math.floor(gameState.timeSpent / 60)}分{gameState.timeSpent % 60}秒
+
+            {gameState.hintsUsed > 0 && (
+              <div>使用したヒント: {gameState.hintsUsed}回</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 新しいゲーム確認ダイアログ */}
+      {showNewGameConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              新しい問題を開始しますか？
+            </h3>
+
+            <p className="text-gray-600 mb-4">
+              現在の進行状況（{progress}%）が失われます。
+              <br />
+              続行してもよろしいですか？
+            </p>
+
+            <div className="flex space-x-3">
+              <button
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                onClick={() => setShowNewGameConfirm(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                onClick={startNewGame}
+              >
+                新しい問題を開始
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
