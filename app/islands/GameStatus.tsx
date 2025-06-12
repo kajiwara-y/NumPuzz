@@ -1,4 +1,4 @@
-import { SudokuState, formatTime, getDifficultyLabel, getDifficultyColor } from '../utils/sudoku'
+import { SudokuState, getDifficultyLabel, getDifficultyColor } from '../utils/sudoku'
 
 interface GameStatusProps {
   gameState: SudokuState
@@ -18,27 +18,11 @@ export default function GameStatus({ gameState, isComplete }: GameStatusProps) {
           </p>
         </div>
         
-        <div className="flex items-center gap-4 text-sm text-gray-600">
-          <div className="flex items-center gap-1">
-            <span className="font-medium">⏱️ 経過時間:</span>
-            <span className="font-mono">
-              {formatTime(gameState.timeSpent)}
-            </span>
+        {isComplete && (
+          <div className="flex items-center gap-1 text-green-600 font-medium">
+            <span>✅ 完了</span>
           </div>
-          
-          {gameState.hintsUsed > 0 && (
-            <div className="flex items-center gap-1">
-              <span className="font-medium">💡 ヒント:</span>
-              <span>{gameState.hintsUsed}回</span>
-            </div>
-          )}
-          
-          {isComplete && (
-            <div className="flex items-center gap-1 text-green-600 font-medium">
-              <span>✅ 完了</span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )

@@ -334,19 +334,6 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
         </div>
       )}
 
-      {/* メモモード表示 */}
-      {gameState.isMemoryMode && (
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-purple-700">
-            <span>📝</span>
-            <span className="font-medium">メモモード</span>
-            <span className="text-sm text-purple-600">
-              数字をクリックしてメモを追加/削除できます
-            </span>
-          </div>
-        </div>
-      )}
-
       <div className="space-y-4">
         <div className="flex justify-center">
           <SudokuBoard
@@ -384,13 +371,6 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
 
           <div className="text-lg font-medium text-green-800">
             ナンプレを完成させました！
-          </div>
-
-          <div className="text-sm text-green-700 space-y-1">
-            <div>所要時間: {Math.floor(gameState.timeSpent / 60)}分{gameState.timeSpent % 60}秒</div>
-            {gameState.hintsUsed > 0 && (
-              <div>使用したヒント: {gameState.hintsUsed}回</div>
-            )}
           </div>
 
           <div className="pt-3 border-t border-green-200">

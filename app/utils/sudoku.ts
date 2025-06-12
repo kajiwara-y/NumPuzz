@@ -19,7 +19,6 @@ export interface SudokuState {
   lastModified: string // 最終更新時刻
   completedAt?: string // 完了時刻
   timeSpent: number // 経過時間（秒）
-  hintsUsed: number // 使用したヒント数
   isMemoryMode: boolean // メモモードかどうか
 }
 
@@ -44,7 +43,6 @@ export function createInitialState(puzzle: SudokuPuzzle): SudokuState {
     startedAt: new Date().toISOString(),
     lastModified: new Date().toISOString(),
     timeSpent: 0,
-    hintsUsed: 0,
     isMemoryMode: false
   }
 }
