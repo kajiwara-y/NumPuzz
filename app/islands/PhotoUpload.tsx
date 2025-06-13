@@ -28,6 +28,21 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
       setError('ファイルサイズは10MB以下にしてください')
       return
     }
+    
+    // 画像の解像度チェック
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      const minDimension = Math.min(img.width, img.height);
+      if (minDimension < 300) {
+        setError('画像の解像度が低すぎます。もっと高解像度の画像を使用してください。');
+        return;
+      }
+    };
+    img.onerror = () => {
+      setError('画像の読み込みに失敗しました');
+    };
+    img.src = URL.createObjectURL(file);
 
     setSelectedFile(file)
     setError(null)
@@ -35,6 +50,19 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
     // プレビュー用のURLを作成
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
+    
+    // 画像の前処理を行う
+    enhanceImageForOCR(file).then(enhancedFile => {
+      if (enhancedFile) {
+        setSelectedFile(enhancedFile)
+        // プレビューも更新するとユーザーが処理後の画像を確認できる
+        const enhancedUrl = URL.createObjectURL(enhancedFile)
+        setPreviewUrl(enhancedUrl)
+      }
+    }).catch(err => {
+      console.error('Image enhancement failed:', err)
+      // 失敗しても元の画像を使用するのでエラー表示はしない
+    })
   }
 
   const handleAnalyze = async () => {
@@ -155,7 +183,7 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
             disabled={isAnalyzing}
           />
           <p className="text-xs text-gray-500 mt-1">
-            JPG, PNG形式、5MB以下
+            JPG, PNG形式、5MB以下、高解像度の画像を推奨
           </p>
         </div>
 
@@ -169,6 +197,9 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
                 alt="Selected image"
                 className="max-w-full max-h-64 mx-auto rounded"
               />
+              <div className="mt-2 text-xs text-gray-500">
+                画像は自動的に処理され、数字認識精度が向上します
+              </div>
             </div>
           </div>
         )}
@@ -215,9 +246,107 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
             <li>• 明るい場所で、影が入らないように注意してください</li>
             <li>• 数字がはっきり見えるように、ピントを合わせてください</li>
             <li>• 斜めではなく、正面から撮影してください</li>
+            <li>• 手書きの数字は、なるべく大きくはっきり書くと認識率が上がります</li>
+            <li>• 印刷された数独の方が認識精度が高くなります</li>
           </ul>
         </div>
       </div>
     </div>
   )
 }
+
+// 画像をOCR用に前処理する関数
+const enhanceImageForOCR = async (file: File): Promise<File | null> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          // キャンバスを作成
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            console.error('Canvas context not available');
+            resolve(null);
+            return;
+          }
+          
+          // 適切なサイズに調整（大きすぎる画像は縮小、小さすぎる画像は拡大）
+          const MAX_SIZE = 1200;
+          const MIN_SIZE = 600;
+          let width = img.width;
+          let height = img.height;
+          
+          if (Math.max(width, height) > MAX_SIZE) {
+            const ratio = MAX_SIZE / Math.max(width, height);
+            width *= ratio;
+            height *= ratio;
+          } else if (Math.max(width, height) < MIN_SIZE) {
+            const ratio = MIN_SIZE / Math.max(width, height);
+            width *= ratio;
+            height *= ratio;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          // 画像を描画
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // コントラスト強調とノイズ除去
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const data = imageData.data;
+          
+          // グレースケール変換とコントラスト強調
+          for (let i = 0; i < data.length; i += 4) {
+            // グレースケール変換
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            
+            // コントラスト強調（閾値を使用）
+            const threshold = 128;
+            const newValue = gray > threshold ? 255 : 0;
+            
+            data[i] = newValue;     // R
+            data[i + 1] = newValue; // G
+            data[i + 2] = newValue; // B
+          }
+          
+          ctx.putImageData(imageData, 0, 0);
+          
+          // キャンバスからBlobを作成
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              console.error('Failed to create blob from canvas');
+              resolve(null);
+              return;
+            }
+            
+            // 新しいFileオブジェクトを作成
+            const enhancedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            
+            resolve(enhancedFile);
+          }, 'image/jpeg', 0.95);
+          
+        } catch (err) {
+          console.error('Error processing image:', err);
+          resolve(null);
+        }
+      };
+      
+      img.onerror = () => {
+        console.error('Failed to load image');
+        resolve(null);
+      };
+      
+      img.src = URL.createObjectURL(file);
+      
+    } catch (err) {
+      console.error('Error in enhanceImageForOCR:', err);
+      reject(err);
+    }
+  });
+};
