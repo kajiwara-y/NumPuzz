@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import SudokuBoard from './SudokuBoard'
 import GameControls from './GameControls'
 import GameStatus from './GameStatus'
+import SudokuHintButton from './SudokuHintButton'
 import { 
   SudokuPuzzle, 
   SudokuState, 
@@ -60,6 +61,7 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
   const [lastSaved, setLastSaved] = useState<string | null>(null)
   const [conflicts, setConflicts] = useState<Set<string>>(new Set())
   const [gameStarted, setGameStarted] = useState(false)
+  const [highlightedCell, setHighlightedCell] = useState<string | undefined>()
 
   // 自動保存用のタイマー
   const autoSaveTimerRef = useRef<number | null>(null)
@@ -163,6 +165,21 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
 
   const handleCellSelect = (row: number, col: number) => {
     setSelectedCell([row, col])
+    // ハイライトをクリア
+    setHighlightedCell(undefined)
+  }
+  
+  // ヒントからのセルハイライト処理
+  const handleHighlightCell = (cellRef: string) => {
+    setHighlightedCell(cellRef)
+    
+    // セルの選択も行う
+    const match = cellRef.match(/R(\d+)C(\d+)/i)
+    if (match) {
+      const row = parseInt(match[1]) - 1 // 0-indexedに変換
+      const col = parseInt(match[2]) - 1 // 0-indexedに変換
+      setSelectedCell([row, col])
+    }
   }
 
   const handleNumberInput = (number: number) => {
@@ -345,6 +362,7 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
             errors={errors}
             isComplete={isComplete}
             isMemoryMode={gameState.isMemoryMode}
+            highlightedCell={highlightedCell}
           />
         </div>
 
@@ -359,6 +377,15 @@ export default function SudokuGame({ onHeaderVisibilityChange }: SudokuGameProps
             isMemoryMode={gameState.isMemoryMode}
             currentGrid={gameState.currentGrid}
           />
+          
+          {/* テクニック提案ボタン */}
+          {!isComplete && progress > 20 && (
+            <SudokuHintButton 
+              gameState={gameState}
+              progress={progress}
+              onHighlightCell={handleHighlightCell}
+            />
+          )}
         </div>
       </div>
 

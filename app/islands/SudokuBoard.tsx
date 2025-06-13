@@ -7,6 +7,7 @@ interface SudokuBoardProps {
   errors?: Set<string>
   isComplete?: boolean
   isMemoryMode?: boolean
+  highlightedCell?: string // R3C5形式のセル指定
 }
 
 export default function SudokuBoard({
@@ -17,7 +18,8 @@ export default function SudokuBoard({
   onCellSelect,
   errors = new Set(),
   isComplete = false,
-  isMemoryMode = false
+  isMemoryMode = false,
+  highlightedCell
 }: SudokuBoardProps) {
   // メモ数字を表示する関数
   const renderMemoNumbers = (memos: Set<number>) => {
@@ -101,6 +103,18 @@ export default function SudokuBoard({
     
     return 'none'
   }
+  
+  // 注: この関数は現在使用していません。将来的に必要になった場合のために残しています。
+  // ヒントで指定されたセルをハイライトする関数
+  // const highlightHintCell = (cellText: string) => {
+  //   // R3C5のような形式をハイライトする
+  //   const match = cellText.match(/R(\d+)C(\d+)/i)
+  //   if (match) {
+  //     const row = parseInt(match[1]) - 1 // 0-indexedに変換
+  //     const col = parseInt(match[2]) - 1 // 0-indexedに変換
+  //     onCellSelect(row, col)
+  //   }
+  // }
 
   const getCellClassName = (row: number, col: number) => {
     const baseClasses = "relative w-8 h-8 sm:w-10 sm:h-10 border border-gray-400 flex items-center justify-center text-sm sm:text-base font-medium cursor-pointer transition-colors"
@@ -113,7 +127,10 @@ export default function SudokuBoard({
 
     // セルの関連情報
     const relation = getCellRelation(row, col)
-
+    
+    // ヒントでハイライトされているセルかどうか
+    const isHighlighted = highlightedCell && 
+      highlightedCell.toLowerCase() === `r${row+1}c${col+1}`.toLowerCase()
     
     // 3x3ブロックの境界線
     const thickBorderClasses = []
@@ -124,8 +141,11 @@ export default function SudokuBoard({
     
     let colorClasses = ''
     
-    if (hasError) {
-      // エラーは最優先
+    if (isHighlighted) {
+      // ヒントでハイライトされたセルは最優先
+      colorClasses = 'bg-green-300 text-green-900 shadow-inner ring-2 ring-green-500 ring-inset'
+    } else if (hasError) {
+      // エラーは次に優先
       colorClasses = 'bg-red-100 text-red-700 border-red-300'
     } else if (relation === 'selected') {
       // 選択されたセル
@@ -173,25 +193,69 @@ export default function SudokuBoard({
 
   return (
     <div className="inline-block bg-gray-800 p-1 rounded-lg">
-      <div className="grid grid-cols-9 gap-0 bg-white rounded">
-        {currentGrid.map((row, rowIndex) =>
-          row.map((cell, colIndex) => (
-            <button
-              key={`${rowIndex}-${colIndex}`}
-              className={getCellClassName(rowIndex, colIndex)}
-              onClick={() => onCellSelect(rowIndex, colIndex)}
-              disabled={isComplete}
-            >
-              {cell === 0 ? (
-                // 空のセルの場合はメモ数字を表示
-                renderMemoNumbers(memoGrid[rowIndex][colIndex])
-              ) : (
-                // 数字が入っている場合は数字を表示
-                <span className="relative z-20 text-center">{cell}</span>
-              )}
-            </button>
-          ))
-        )}
+      {/* 列番号の表示 */}
+      <div className="flex justify-around mb-1 px-1">
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(col => (
+          <div key={`col-${col}`} className="w-8 h-5 sm:w-10 flex items-center justify-center text-xs text-white font-medium">
+            C{col}
+          </div>
+        ))}
+      </div>
+      
+      <div className="flex">
+        {/* 行番号の表示 */}
+        <div className="flex flex-col justify-around mr-1">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(row => (
+            <div key={`row-${row}`} className="h-8 w-5 sm:h-10 flex items-center justify-center text-xs text-white font-medium">
+              R{row}
+            </div>
+          ))}
+        </div>
+        
+        {/* 盤面 */}
+        <div className="grid grid-cols-9 gap-0 bg-white rounded">
+          {currentGrid.map((row, rowIndex) =>
+            row.map((cell, colIndex) => (
+              <button
+                key={`${rowIndex}-${colIndex}`}
+                className={getCellClassName(rowIndex, colIndex)}
+                onClick={() => onCellSelect(rowIndex, colIndex)}
+                disabled={isComplete}
+                aria-label={`Row ${rowIndex + 1}, Column ${colIndex + 1}`}
+                data-row={rowIndex + 1}
+                data-col={colIndex + 1}
+              >
+                {cell === 0 ? (
+                  // 空のセルの場合はメモ数字を表示
+                  renderMemoNumbers(memoGrid[rowIndex][colIndex])
+                ) : (
+                  // 数字が入っている場合は数字を表示
+                  <span className="relative z-20 text-center">{cell}</span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+      
+      {/* 凡例 */}
+      <div className="mt-2 px-2 flex flex-wrap justify-center gap-2 text-xs text-white">
+        <div className="flex items-center">
+          <span className="inline-block w-3 h-3 bg-blue-300 mr-1 rounded-sm"></span>
+          <span>選択中</span>
+        </div>
+        <div className="flex items-center">
+          <span className="inline-block w-3 h-3 bg-green-300 mr-1 rounded-sm"></span>
+          <span>ヒント</span>
+        </div>
+        <div className="flex items-center">
+          <span className="inline-block w-3 h-3 bg-yellow-200 mr-1 rounded-sm"></span>
+          <span>同じ数字</span>
+        </div>
+        <div className="flex items-center">
+          <span className="inline-block w-3 h-3 bg-red-100 mr-1 rounded-sm"></span>
+          <span>矛盾</span>
+        </div>
       </div>
     </div>
   )
