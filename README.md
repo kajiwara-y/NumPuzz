@@ -16,6 +16,7 @@
   - 同じ数字のセル
 - メモ機能（候補数字の記録）
 - エラー検出とリアルタイム表示
+- テクニック提案機能（Gemini AI連携）
 
 ### 💾 自動保存機能
 - 進行状況の自動保存
@@ -27,9 +28,6 @@
 - 高速レスポンス
 - オフライン対応
 
-## 🚀 デモ
-
-[Live Demo](https://your-app-url.pages.dev) （デプロイ後のURLに変更）
 
 ## 🛠️ 技術スタック
 
@@ -78,6 +76,7 @@ cp .example.dev.vars .dev.vars
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
+ALLOW_USERS=user1@example.com,user2@example.com
 ```
 
 ### 開発サーバー起動
@@ -102,10 +101,16 @@ npx wrangler pages dev dist --local --port 8787
 ### 2. 問題を解く
 1. セルをタップして選択
 2. 数字ボタンで入力
-3. メモモードで候補数字を記録
-4. 自動保存で進行状況を保持
+3. 自動保存で進行状況を保持
+4. 行き詰まったらテクニック提案機能を利用
 
-### 3. 編集機能
+### 3. テクニック提案機能
+1. 進行状況が20%以上で表示される「次のテクニックを提案」ボタンをクリック
+2. Gemini AIが現在の盤面を分析し、適切なテクニックを提案
+3. 提案内容のセル参照（例：R3C5）をクリックすると該当セルがハイライト表示
+4. 過去のヒント履歴も参照可能
+
+### 4. 編集機能
 - **UIモード**: クリック&タップで直感的編集
 - **テキストモード**: 数独文字列の直接編集
 
@@ -118,13 +123,15 @@ npx wrangler pages dev dist --local --port 8787
 │   ├── islands/          # クライアントサイドコンポーネント
 │   │   ├── SudokuGame.tsx
 │   │   ├── SudokuBoard.tsx
+│   │   ├── SudokuHintButton.tsx
 │   │   ├── PhotoUpload.tsx
 │   │   └── PuzzleEditor.tsx
 │   ├── routes/           # ページルート
 │   │   ├── index.tsx     # メインゲーム画面
 │   │   ├── create.tsx    # 問題作成画面
 │   │   └── api/          # APIエンドポイント
-│   │       └── analyze-image.ts
+│   │       ├── analyze-image.ts
+│   │       └── analyze-sudoku.ts
 │   ├── utils/            # ユーティリティ
 │   │   └── sudoku.ts     # 数独ロジック
 │   └── types/            # 型定義
@@ -145,6 +152,12 @@ npx wrangler pages dev dist --local --port 8787
 - 9x9グリッドの表示
 - セル選択とハイライト
 - メモ数字の表示
+- 行・列番号表示（R1-R9, C1-C9）
+
+#### `SudokuHintButton.tsx`
+- テクニック提案機能
+- Gemini API連携
+- ヒント履歴管理
 
 #### `PhotoUpload.tsx`
 - 画像アップロード
@@ -176,6 +189,27 @@ npx wrangler pages dev dist --local --port 8787
 }
 ```
 
+#### `POST /api/analyze-sudoku`
+現在の盤面からテクニックを提案
+
+```typescript
+// リクエスト
+{
+  "currentGrid": number[][],
+  "initialGrid": number[][],
+  "memoGrid": number[][][],
+  "progress": number
+}
+
+// レスポンス
+{
+  "success": true,
+  "technique": string,
+  "description": string,
+  "timestamp": string
+}
+```
+
 ## 🚀 デプロイ
 
 ### Cloudflare Pages
@@ -192,6 +226,7 @@ npx wrangler pages deploy dist
 
 Cloudflare Dashboardで以下を設定：
 - `GEMINI_API_KEY`: Google Gemini APIキー
+- `ALLOW_USERS`: 許可するユーザーのメールアドレス（カンマ区切り）
 
 ## 🧪 テスト
 
@@ -211,10 +246,13 @@ npm run preview
 - Edge 90+
 
 
-## 🙏 謝辞
+## 📚 参考・利用ライブラリ
 
-- [HonoX](https://github.com/honojs/honox) - 素晴らしいフルスタックフレームワーク
-- [Google Gemini](https://ai.google.dev/) - 画像認識AI
-- [Cloudflare](https://www.cloudflare.com/) - ホスティングプラットフォーム
+- [HonoX](https://github.com/honojs/honox) - フルスタックフレームワーク
+- [Google Gemini API](https://ai.google.dev/) - 画像認識・テキスト生成AI
+- [Cloudflare Workers](https://www.cloudflare.com/) - サーバーレス実行環境
 - [Tailwind CSS](https://tailwindcss.com/) - CSSフレームワーク
 
+## 📝 ライセンス
+
+MIT
