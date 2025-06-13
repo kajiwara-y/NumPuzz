@@ -31,6 +31,34 @@ interface GeminiResponse {
   }
 }
 
+// ログ用のヘルパー関数
+function generateRequestId(data: any): string {
+  // シンプルなハッシュ関数（実際のMD5ではなく簡易版）
+  const str = JSON.stringify(data);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 32bit整数に変換
+  }
+  return Math.abs(hash).toString(16).substring(0, 8);
+}
+
+async function logToStorage(c: any, requestId: string, type: 'request' | 'response' | 'result', data: any) {
+  try {
+    // KV Storageがある場合はそちらに保存
+    if (c.env.SUDOKU_HINTS_KV) {
+      const key = `${requestId}_${type}_${Date.now()}`;
+      await c.env.SUDOKU_HINTS_KV.put(key, JSON.stringify(data));
+    }
+    
+    // ログも出力
+    console.log(`[${requestId}] ${type.toUpperCase()}:`, JSON.stringify(data));
+  } catch (error) {
+    console.error('Failed to log data:', error);
+  }
+}
+
 app.post('/', async (c) => {
   try {
     const apiKey = c.env.GEMINI_API_KEY
@@ -43,6 +71,7 @@ app.post('/', async (c) => {
     }
 
     const { currentGrid, initialGrid, memoGrid, progress }: AnalyzeSudokuRequest = await c.req.json()
+    const requestId = generateRequestId({ currentGrid, initialGrid, progress })
     
     if (!currentGrid || !initialGrid) {
       return c.json({ 
@@ -51,22 +80,26 @@ app.post('/', async (c) => {
       }, 400)
     }
 
-    // 盤面をテキスト形式に変換
-    const currentGridText = currentGrid.map(row => 
-      row.map(cell => cell === 0 ? '.' : cell).join('')
-    ).join('\n')
-
-    const initialGridText = initialGrid.map(row => 
-      row.map(cell => cell === 0 ? '.' : cell).join('')
-    ).join('\n')
-
-    // メモ情報をテキスト形式に変換
-    const memoText = memoGrid.map((row, r) => 
+    // メモ情報をJSON形式に変換
+    const memoJSON = memoGrid.map((row, r) => 
       row.map((cell, c) => {
-        if (!cell || cell.length === 0) return ''
-        return `R${r+1}C${c+1}: ${cell.sort().join(',')}`
-      }).filter(text => text !== '')
-    ).flat().join('\n')
+        if (!cell || cell.length === 0) return null
+        return {
+          row: r+1,
+          col: c+1,
+          values: cell.sort()
+        }
+      }).filter(memo => memo !== null)
+    ).flat()
+    
+    // リクエストデータをログに記録
+    const requestData = {
+      currentGrid,
+      initialGrid,
+      memos: memoJSON,
+      progress
+    }
+    await logToStorage(c, requestId, 'request', requestData)
 
     // Gemini API呼び出し
     const response = await fetch(
@@ -82,17 +115,16 @@ app.post('/', async (c) => {
               {
                 text: `あなたは数独（ナンプレ）の専門家です。以下の盤面を分析し、次に使えるテクニックを提案してください。
 
-【現在の盤面】
-${currentGridText}
+【盤面情報】
+以下のJSONオブジェクトには現在の盤面と初期盤面が含まれています。
+0は空のセルを表します。
 
-【初期盤面】
-${initialGridText}
-
-【メモ情報】
-${memoText || 'メモはありません'}
-
-【進行状況】
-${progress}% 完了
+{
+  "currentGrid": ${JSON.stringify(currentGrid)},
+  "initialGrid": ${JSON.stringify(initialGrid)},
+  "memos": ${JSON.stringify(memoJSON)},
+  "progress": ${progress}
+}
 
 【指示】
 1. この盤面で次に使えるテクニックを1つ提案してください
@@ -100,6 +132,7 @@ ${progress}% 完了
 3. 初心者にもわかりやすく説明してください
 4. 回答は100-200文字程度で簡潔にまとめてください
 5. 回答は日本語でお願いします
+6. セルの位置は「R行C列」の形式で指定してください（例：R3C5は3行5列目のセル）
 
 以下の形式でJSON形式で返してください：
 
@@ -133,6 +166,9 @@ ${progress}% 完了
 
     const data: GeminiResponse = await response.json()
     
+    // Geminiからのレスポンスをログに記録
+    await logToStorage(c, requestId, 'response', data)
+    
     if (data.error) {
       throw new Error(data.error.message)
     }
@@ -165,12 +201,18 @@ ${progress}% 完了
       throw new Error('Invalid response format')
     }
 
-    return c.json({
+    const result = {
       success: true,
       technique: parsedResult.technique,
       description: parsedResult.description,
-      timestamp: new Date().toISOString()
-    })
+      timestamp: new Date().toISOString(),
+      requestId
+    }
+    
+    // 解析結果をログに記録
+    await logToStorage(c, requestId, 'result', result)
+    
+    return c.json(result)
 
   } catch (error) {
     console.error('Sudoku analysis error:', error)
