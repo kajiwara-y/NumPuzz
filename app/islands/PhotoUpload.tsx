@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { PhotoAnalysisResult } from '../utils/sudoku'
 import { debugLog, isLocalDevelopment } from '../utils/debug'
 
@@ -7,11 +7,31 @@ interface PhotoUploadProps {
   onCancel: () => void
 }
 
-export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) {
+// サーバーサイドレンダリング時にはシンプルなプレースホルダーを返す関数
+function ServerSidePlaceholder() {
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      <div className="bg-white rounded-lg shadow-lg p-6 flex justify-center items-center" style={{ minHeight: '300px' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// クライアントサイドでのみ実行されるコンポーネント
+function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [originalFile, setOriginalFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [threshold, setThreshold] = useState<number>(128) // コントラストのしきい値
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState<boolean>(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null)
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -38,6 +58,12 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
         setError('画像の解像度が低すぎます。もっと高解像度の画像を使用してください。');
         return;
       }
+      
+      // 元の画像を保存
+      setOriginalFile(file);
+      
+      // キャンバスに画像を描画して元のImageDataを保存
+      loadImageToCanvas(file);
     };
     img.onerror = () => {
       setError('画像の読み込みに失敗しました');
@@ -50,19 +76,6 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
     // プレビュー用のURLを作成
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
-    
-    // 画像の前処理を行う
-    enhanceImageForOCR(file).then(enhancedFile => {
-      if (enhancedFile) {
-        setSelectedFile(enhancedFile)
-        // プレビューも更新するとユーザーが処理後の画像を確認できる
-        const enhancedUrl = URL.createObjectURL(enhancedFile)
-        setPreviewUrl(enhancedUrl)
-      }
-    }).catch(err => {
-      console.error('Image enhancement failed:', err)
-      // 失敗しても元の画像を使用するのでエラー表示はしない
-    })
   }
 
   const handleAnalyze = async () => {
@@ -163,6 +176,127 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
     }
   }
 
+  // 画像をキャンバスに読み込む関数
+  const loadImageToCanvas = (file: File) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        // 適切なサイズに調整
+        const MAX_SIZE = 1200;
+        const MIN_SIZE = 600;
+        let width = img.width;
+        let height = img.height;
+        
+        if (Math.max(width, height) > MAX_SIZE) {
+          const ratio = MAX_SIZE / Math.max(width, height);
+          width *= ratio;
+          height *= ratio;
+        } else if (Math.max(width, height) < MIN_SIZE) {
+          const ratio = MIN_SIZE / Math.max(width, height);
+          width *= ratio;
+          height *= ratio;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // 画像を描画
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // 元の画像データを保存
+        const imageData = ctx.getImageData(0, 0, width, height);
+        setOriginalImageData(imageData);
+        
+        // 初期処理を適用
+        const currentThreshold = threshold || 128; // デフォルト値を使用
+        applyThreshold(imageData, currentThreshold);
+      } catch (err) {
+        console.error('Error loading image to canvas:', err);
+      }
+    };
+    
+    img.onerror = () => {
+      console.error('Failed to load image');
+    };
+    
+    img.src = URL.createObjectURL(file);
+  };
+  
+  // しきい値を適用する関数
+  const applyThreshold = (imageData: ImageData, thresholdValue: number) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    
+    try {
+      // 元のデータをコピー
+      const newImageData = new ImageData(
+        new Uint8ClampedArray(imageData.data),
+        imageData.width,
+        imageData.height
+      );
+      
+      const data = newImageData.data;
+      
+      // グレースケール変換とコントラスト強調
+      for (let i = 0; i < data.length; i += 4) {
+        // グレースケール変換
+        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        
+        // コントラスト強調（閾値を使用）
+        const newValue = gray > thresholdValue ? 255 : 0;
+        
+        data[i] = newValue;     // R
+        data[i + 1] = newValue; // G
+        data[i + 2] = newValue; // B
+      }
+      
+      ctx.putImageData(newImageData, 0, 0);
+      
+      // 処理後の画像をプレビューとして設定
+      updatePreviewFromCanvas();
+    } catch (err) {
+      console.error('Error applying threshold:', err);
+    }
+  };
+  
+  // キャンバスから画像を取得してプレビューを更新
+  const updatePreviewFromCanvas = () => {
+    if (!canvasRef.current) return;
+    
+    try {
+      const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
+      setPreviewUrl(dataUrl);
+      
+      // Fileオブジェクトも更新
+      canvasRef.current.toBlob((blob) => {
+        if (!blob || !originalFile) return;
+        
+        const enhancedFile = new File([blob], originalFile.name, {
+          type: 'image/jpeg',
+          lastModified: Date.now()
+        });
+        
+        setSelectedFile(enhancedFile);
+      }, 'image/jpeg', 0.95);
+    } catch (err) {
+      console.error('Error updating preview from canvas:', err);
+    }
+  };
+  
+  // しきい値が変更されたときの処理
+  useEffect(() => {
+    if (originalImageData && typeof threshold === 'number') {
+      applyThreshold(originalImageData, threshold);
+    }
+  }, [threshold, originalImageData]);
+
   return (
     <div className="max-w-2xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -197,12 +331,56 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
                 alt="Selected image"
                 className="max-w-full max-h-64 mx-auto rounded"
               />
-              <div className="mt-2 text-xs text-gray-500">
-                画像は自動的に処理され、数字認識精度が向上します
+              
+              {/* 詳細設定ボタン */}
+              <div className="mt-2 flex justify-between items-center">
+                <div className="text-xs text-gray-500">
+                  画像は自動的に処理され、数字認識精度が向上します
+                </div>
+                <button 
+                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                  className="text-xs text-blue-600 hover:text-blue-800"
+                >
+                  {showAdvancedSettings ? '詳細設定を隠す' : '詳細設定を表示'}
+                </button>
               </div>
+              
+              {/* 詳細設定パネル */}
+              {showAdvancedSettings && (
+                <div className="mt-3 p-3 bg-gray-100 rounded-lg">
+                  <div className="mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      コントラストしきい値: {threshold}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="255"
+                      value={threshold}
+                      onChange={(e) => setThreshold(parseInt(e.target.value))}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>暗い (0)</span>
+                      <span>中間 (128)</span>
+                      <span>明るい (255)</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    しきい値を調整して、数字の認識精度を向上させることができます。
+                    数字が見えにくい場合は値を下げ、ノイズが多い場合は値を上げてみてください。
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
+        
+        {/* 非表示のキャンバス（画像処理用） */}
+        <canvas 
+          ref={canvasRef} 
+          style={{ display: 'none' }}
+        />
 
         {/* エラー表示 */}
         {error && (
@@ -248,6 +426,7 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
             <li>• 斜めではなく、正面から撮影してください</li>
             <li>• 手書きの数字は、なるべく大きくはっきり書くと認識率が上がります</li>
             <li>• 印刷された数独の方が認識精度が高くなります</li>
+            <li>• 認識精度が低い場合は、詳細設定でコントラストを調整してみてください</li>
           </ul>
         </div>
       </div>
@@ -255,98 +434,13 @@ export default function PhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadPr
   )
 }
 
-// 画像をOCR用に前処理する関数
-const enhanceImageForOCR = async (file: File): Promise<File | null> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          // キャンバスを作成
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          if (!ctx) {
-            console.error('Canvas context not available');
-            resolve(null);
-            return;
-          }
-          
-          // 適切なサイズに調整（大きすぎる画像は縮小、小さすぎる画像は拡大）
-          const MAX_SIZE = 1200;
-          const MIN_SIZE = 600;
-          let width = img.width;
-          let height = img.height;
-          
-          if (Math.max(width, height) > MAX_SIZE) {
-            const ratio = MAX_SIZE / Math.max(width, height);
-            width *= ratio;
-            height *= ratio;
-          } else if (Math.max(width, height) < MIN_SIZE) {
-            const ratio = MIN_SIZE / Math.max(width, height);
-            width *= ratio;
-            height *= ratio;
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          
-          // 画像を描画
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          // コントラスト強調とノイズ除去
-          const imageData = ctx.getImageData(0, 0, width, height);
-          const data = imageData.data;
-          
-          // グレースケール変換とコントラスト強調
-          for (let i = 0; i < data.length; i += 4) {
-            // グレースケール変換
-            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            
-            // コントラスト強調（閾値を使用）
-            const threshold = 128;
-            const newValue = gray > threshold ? 255 : 0;
-            
-            data[i] = newValue;     // R
-            data[i + 1] = newValue; // G
-            data[i + 2] = newValue; // B
-          }
-          
-          ctx.putImageData(imageData, 0, 0);
-          
-          // キャンバスからBlobを作成
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              console.error('Failed to create blob from canvas');
-              resolve(null);
-              return;
-            }
-            
-            // 新しいFileオブジェクトを作成
-            const enhancedFile = new File([blob], file.name, {
-              type: 'image/jpeg',
-              lastModified: Date.now()
-            });
-            
-            resolve(enhancedFile);
-          }, 'image/jpeg', 0.95);
-          
-        } catch (err) {
-          console.error('Error processing image:', err);
-          resolve(null);
-        }
-      };
-      
-      img.onerror = () => {
-        console.error('Failed to load image');
-        resolve(null);
-      };
-      
-      img.src = URL.createObjectURL(file);
-      
-    } catch (err) {
-      console.error('Error in enhanceImageForOCR:', err);
-      reject(err);
-    }
-  });
-};
+// アイランドコンポーネントのエクスポート
+export default function PhotoUpload(props: PhotoUploadProps) {
+  // サーバーサイドレンダリング時
+  if (typeof window === 'undefined') {
+    return <ServerSidePlaceholder />;
+  }
+  
+  // クライアントサイドレンダリング時
+  return <ClientSidePhotoUpload {...props} />;
+}
