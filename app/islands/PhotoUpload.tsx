@@ -29,6 +29,7 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [threshold, setThreshold] = useState<number>(128) // コントラストのしきい値
+  const [contrastEnabled, setContrastEnabled] = useState<boolean>(true) // コントラスト強調の有効/無効
   const [showAdvancedSettings, setShowAdvancedSettings] = useState<boolean>(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null)
@@ -215,7 +216,7 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
         
         // 初期処理を適用
         const currentThreshold = threshold || 128; // デフォルト値を使用
-        applyThreshold(imageData, currentThreshold);
+        applyImageProcessing(imageData, currentThreshold, contrastEnabled);
       } catch (err) {
         console.error('Error loading image to canvas:', err);
       }
@@ -228,8 +229,8 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
     img.src = URL.createObjectURL(file);
   };
   
-  // しきい値を適用する関数
-  const applyThreshold = (imageData: ImageData, thresholdValue: number) => {
+  // 画像処理を適用する関数
+  const applyImageProcessing = (imageData: ImageData, thresholdValue: number, applyContrast: boolean) => {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
@@ -244,17 +245,29 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
       
       const data = newImageData.data;
       
-      // グレースケール変換とコントラスト強調
-      for (let i = 0; i < data.length; i += 4) {
-        // グレースケール変換
-        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        
-        // コントラスト強調（閾値を使用）
-        const newValue = gray > thresholdValue ? 255 : 0;
-        
-        data[i] = newValue;     // R
-        data[i + 1] = newValue; // G
-        data[i + 2] = newValue; // B
+      if (applyContrast) {
+        // コントラスト強調を適用する場合
+        for (let i = 0; i < data.length; i += 4) {
+          // グレースケール変換
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          
+          // コントラスト強調（閾値を使用）
+          const newValue = gray > thresholdValue ? 255 : 0;
+          
+          data[i] = newValue;     // R
+          data[i + 1] = newValue; // G
+          data[i + 2] = newValue; // B
+        }
+      } else {
+        // コントラスト強調を適用しない場合は、グレースケール化のみ行う
+        for (let i = 0; i < data.length; i += 4) {
+          // グレースケール変換
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          
+          data[i] = gray;     // R
+          data[i + 1] = gray; // G
+          data[i + 2] = gray; // B
+        }
       }
       
       ctx.putImageData(newImageData, 0, 0);
@@ -262,7 +275,7 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
       // 処理後の画像をプレビューとして設定
       updatePreviewFromCanvas();
     } catch (err) {
-      console.error('Error applying threshold:', err);
+      console.error('Error applying image processing:', err);
     }
   };
   
@@ -290,12 +303,12 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
     }
   };
   
-  // しきい値が変更されたときの処理
+  // 画像処理設定が変更されたときの処理
   useEffect(() => {
     if (originalImageData && typeof threshold === 'number') {
-      applyThreshold(originalImageData, threshold);
+      applyImageProcessing(originalImageData, threshold, contrastEnabled);
     }
-  }, [threshold, originalImageData]);
+  }, [threshold, contrastEnabled, originalImageData]);
 
   return (
     <div className="max-w-2xl mx-auto p-6">
@@ -348,28 +361,61 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
               {/* 詳細設定パネル */}
               {showAdvancedSettings && (
                 <div className="mt-3 p-3 bg-gray-100 rounded-lg">
-                  <div className="mb-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      コントラストしきい値: {threshold}
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="255"
-                      value={threshold}
-                      onChange={(e) => setThreshold(parseInt(e.target.value))}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>暗い (0)</span>
-                      <span>中間 (128)</span>
-                      <span>明るい (255)</span>
+                  {/* コントラスト強調の有効/無効切り替え */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">
+                        コントラスト強調
+                      </label>
+                      <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                        <input 
+                          type="checkbox" 
+                          id="toggle-contrast" 
+                          checked={contrastEnabled}
+                          onChange={() => setContrastEnabled(!contrastEnabled)}
+                          className="sr-only"
+                        />
+                        <label 
+                          htmlFor="toggle-contrast"
+                          className={`block overflow-hidden h-6 rounded-full cursor-pointer ${contrastEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+                        >
+                          <span 
+                            className={`block h-6 w-6 rounded-full bg-white transform transition-transform ${contrastEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+                          ></span>
+                        </label>
+                      </div>
                     </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      コントラスト強調をオフにすると、元の画像に近い状態で処理されます。
+                      印刷された数独や高品質な画像では、オフにした方が良い結果が得られる場合があります。
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-600">
-                    しきい値を調整して、数字の認識精度を向上させることができます。
-                    数字が見えにくい場合は値を下げ、ノイズが多い場合は値を上げてみてください。
-                  </p>
+                  
+                  {/* コントラスト強調が有効な場合のみしきい値設定を表示 */}
+                  {contrastEnabled && (
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        コントラストしきい値: {threshold}
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="255"
+                        value={threshold}
+                        onChange={(e) => setThreshold(parseInt(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>暗い (0)</span>
+                        <span>中間 (128)</span>
+                        <span>明るい (255)</span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        しきい値を調整して、数字の認識精度を向上させることができます。
+                        数字が見えにくい場合は値を下げ、ノイズが多い場合は値を上げてみてください。
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -426,7 +472,7 @@ function ClientSidePhotoUpload({ onPhotoAnalyzed, onCancel }: PhotoUploadProps) 
             <li>• 斜めではなく、正面から撮影してください</li>
             <li>• 手書きの数字は、なるべく大きくはっきり書くと認識率が上がります</li>
             <li>• 印刷された数独の方が認識精度が高くなります</li>
-            <li>• 認識精度が低い場合は、詳細設定でコントラストを調整してみてください</li>
+            <li>• 認識精度が低い場合は、詳細設定でコントラスト設定を調整してみてください</li>
           </ul>
         </div>
       </div>
