@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { Env } from '../../types/env'
+// Google AI パッケージは動的インポートで読み込み
 
 const app = new Hono<Env>()
 
@@ -18,18 +19,7 @@ interface AnalyzeSudokuRequest {
   progress: number // 進行状況（%）
 }
 
-interface GeminiResponse {
-  candidates?: Array<{
-    content: {
-      parts: Array<{
-        text: string
-      }>
-    }
-  }>
-  error?: {
-    message: string
-  }
-}
+
 
 // ログ用のヘルパー関数
 function generateRequestId(data: any): string {
@@ -51,7 +41,7 @@ async function logToStorage(c: any, requestId: string, type: 'request' | 'respon
       const key = `${requestId}_${type}_${Date.now()}`;
       await c.env.SUDOKU_HINTS_KV.put(key, JSON.stringify(data));
     }
-    
+
     // ログも出力
     console.log(`[${requestId}] ${type.toUpperCase()}:`, JSON.stringify(data));
   } catch (error) {
@@ -62,36 +52,36 @@ async function logToStorage(c: any, requestId: string, type: 'request' | 'respon
 app.post('/', async (c) => {
   try {
     const apiKey = c.env.GEMINI_API_KEY
-    
+
     if (!apiKey) {
-      return c.json({ 
-        success: false, 
-        error: 'API key not configured' 
+      return c.json({
+        success: false,
+        error: 'API key not configured'
       }, 500)
     }
 
     const { currentGrid, initialGrid, memoGrid, progress }: AnalyzeSudokuRequest = await c.req.json()
     const requestId = generateRequestId({ currentGrid, initialGrid, progress })
-    
+
     if (!currentGrid || !initialGrid) {
-      return c.json({ 
-        success: false, 
-        error: 'Invalid request data' 
+      return c.json({
+        success: false,
+        error: 'Invalid request data'
       }, 400)
     }
 
     // メモ情報をJSON形式に変換
-    const memoJSON = memoGrid.map((row, r) => 
+    const memoJSON = memoGrid.map((row, r) =>
       row.map((cell, c) => {
         if (!cell || cell.length === 0) return null
         return {
-          row: r+1,
-          col: c+1,
+          row: r + 1,
+          col: c + 1,
           values: cell.sort()
         }
       }).filter(memo => memo !== null)
     ).flat()
-    
+
     // リクエストデータをログに記録
     const requestData = {
       currentGrid,
@@ -101,19 +91,11 @@ app.post('/', async (c) => {
     }
     await logToStorage(c, requestId, 'request', requestData)
 
-    // Gemini API呼び出し
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                text: `あなたは数独（ナンプレ）の専門家です。以下の盤面を分析し、次に使えるテクニックを提案してください。
+    // Gen AI SDKを動的インポートで読み込み
+    const { GoogleGenAI, HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+    const genAI = new GoogleGenAI({ apiKey });
+
+    const prompt = `あなたは数独（ナンプレ）の専門家です。以下の盤面を分析し、次に使えるテクニックを提案してください。
 
 【盤面情報】
 以下のJSONオブジェクトには現在の盤面と初期盤面が含まれています。
@@ -146,46 +128,59 @@ app.post('/', async (c) => {
   "technique": "シングルポジション",
   "description": "R3C5のセルを見てください。このセルには7しか入りません。行、列、ブロックの他のセルを確認すると、7はこのセルにしか配置できないことがわかります。確定数字として7を入力しましょう。"
 }
-`
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1000,
-            topP: 0.8,
-            topK: 40
-          }
-        })
-      }
-    )
+`;
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
-    }
-
-    const data: GeminiResponse = await response.json()
+    // リクエストを送信
+    const result = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 1000,
+        topP: 0.8,
+        topK: 40
+      },
+      safetySettings: [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE
+        }
+      ]
+    });
     
+    const textResponse = result.text;
+
     // Geminiからのレスポンスをログに記録
-    await logToStorage(c, requestId, 'response', data)
-    
-    if (data.error) {
-      throw new Error(data.error.message)
-    }
+    await logToStorage(c, requestId, 'response', { text: textResponse })
 
-    if (!data.candidates || data.candidates.length === 0) {
+    if (!textResponse) {
       throw new Error('No response from Gemini API')
     }
 
-    const textResponse = data.candidates[0].content.parts[0].text
-    
     // JSONレスポンスを解析
     let parsedResult
     try {
       // ```json ``` で囲まれている場合の処理
-      const jsonMatch = textResponse.match(/```json\s*([\s\S]*?)\s*```/) || 
-                       textResponse.match(/```\s*([\s\S]*?)\s*```/)
-      
+      const jsonMatch = textResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
+        textResponse.match(/```\s*([\s\S]*?)\s*```/)
+
       if (jsonMatch) {
         parsedResult = JSON.parse(jsonMatch[1])
       } else {
@@ -201,27 +196,27 @@ app.post('/', async (c) => {
       throw new Error('Invalid response format')
     }
 
-    const result = {
+    const analysisResult = {
       success: true,
       technique: parsedResult.technique,
       description: parsedResult.description,
       timestamp: new Date().toISOString(),
       requestId
     }
-    
+
     // 解析結果をログに記録
-    await logToStorage(c, requestId, 'result', result)
-    
-    return c.json(result)
+    await logToStorage(c, requestId, 'result', analysisResult)
+
+    return c.json(analysisResult)
 
   } catch (error) {
     console.error('Sudoku analysis error:', error)
-    
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    
-    return c.json({ 
-      success: false, 
-      error: errorMessage 
+
+    return c.json({
+      success: false,
+      error: errorMessage
     }, 500)
   }
 })
